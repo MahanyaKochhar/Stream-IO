@@ -1,0 +1,39 @@
+flowchart TD
+    START([Start])
+    PARSE[Parse referral PDF into Markdown<br/>LlamaParse only]
+    EXTRACT[Extract nested referral fields<br/>provider-neutral structured output]
+    ROUTING{"Specialty, subspecialty,<br/>and provider match?"}
+    PATIENT[Validate patient fields<br/>promote to graph state]
+    PATIENT_VALID{"Patient valid?"}
+    INSURANCE[Validate insurance fields<br/>promote to graph state]
+    INSURANCE_VALID{"Insurance valid?"}
+
+    REJECT([Reject referral])
+    MISSING_INFO([Missing information])
+    NEXT_STAGE([Ready for next stage])
+
+    START --> PARSE
+    PARSE --> EXTRACT
+    EXTRACT --> ROUTING
+    ROUTING -->|Yes| PATIENT
+    ROUTING -->|No| REJECT
+    PATIENT --> PATIENT_VALID
+    PATIENT_VALID -->|Yes| INSURANCE
+    PATIENT_VALID -->|No| MISSING_INFO
+    INSURANCE --> INSURANCE_VALID
+    INSURANCE_VALID -->|Yes| NEXT_STAGE
+    INSURANCE_VALID -->|No| MISSING_INFO
+
+    classDef input fill:#e8f1ff,stroke:#2563eb,color:#172554,stroke-width:2px;
+    classDef process fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:2px;
+    classDef decision fill:#fff7d6,stroke:#ca8a04,color:#422006,stroke-width:2px;
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+    classDef attention fill:#ffedd5,stroke:#ea580c,color:#7c2d12,stroke-width:2px;
+    classDef failure fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+
+    class START input;
+    class PARSE,EXTRACT,PATIENT,INSURANCE process;
+    class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
+    class NEXT_STAGE success;
+    class MISSING_INFO attention;
+    class REJECT failure;

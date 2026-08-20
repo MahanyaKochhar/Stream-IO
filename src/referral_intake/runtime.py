@@ -4,7 +4,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from referral_intake.gemini import GeminiReferralExtractor
+from referral_intake.clinical_requirements.models import (
+    ReferenceSelection,
+)
+from referral_intake.llm import (
+    StructuredReferenceSelector,
+    StructuredReferralExtractor,
+)
 from referral_intake.models import ReferralExtraction
 
 
@@ -18,6 +24,19 @@ class ReferralExtractor(Protocol):
     """Produce structured referral fields from Markdown."""
 
     def extract(self, markdown: str) -> ReferralExtraction: ...
+
+
+class ClinicalReferenceSelector(Protocol):
+    """Select supported references from loaded skill instructions."""
+
+    def select(
+        self,
+        *,
+        skill_instructions: str,
+        condition: str | None,
+        service: str | None,
+        reason_for_referral: str | None,
+    ) -> ReferenceSelection: ...
 
 
 class LlamaParsePdfParser:
@@ -57,7 +76,9 @@ class RoutingPolicy:
     specialties: frozenset[str] = field(
         default_factory=lambda: frozenset({"orthopedic surgery", "orthopaedic surgery"})
     )
-    subspecialties: frozenset[str] = field(default_factory=lambda: frozenset({"knee"}))
+    subspecialties: frozenset[str] = field(
+        default_factory=lambda: frozenset({"knee"})
+    )
 
 
 @dataclass(frozen=True)
@@ -65,5 +86,10 @@ class GraphContext:
     """Dependencies and policy supplied when invoking the graph."""
 
     parser: PdfParser = field(default_factory=LlamaParsePdfParser)
-    extractor: ReferralExtractor = field(default_factory=GeminiReferralExtractor)
+    extractor: ReferralExtractor = field(
+        default_factory=StructuredReferralExtractor
+    )
+    reference_selector: ClinicalReferenceSelector = field(
+        default_factory=StructuredReferenceSelector
+    )
     routing_policy: RoutingPolicy = field(default_factory=RoutingPolicy)

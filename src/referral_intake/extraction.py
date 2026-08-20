@@ -11,6 +11,13 @@ Do not guess or infer missing patient, insurance, provider, or routing values.
 Return null for information that is absent or ambiguous.
 Use the requested receiving provider for `provider` and the sending clinician
 for `referring_provider`.
+Extract the stated clinical condition, referral priority, and clinical reason
+for referral without adding diagnoses or urgency that are not explicitly
+documented.
+Extract patient sex only when it is explicitly documented; do not infer it
+from names, titles, or other demographic information.
+Classify `referral_type` using only the supported enum values. Return null when
+the documented referral does not clearly support one of those classifications.
 """.strip()
 
 

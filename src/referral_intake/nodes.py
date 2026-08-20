@@ -5,7 +5,7 @@ from typing import Literal
 
 from langgraph.graph import END
 from langgraph.runtime import Runtime
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from pydantic import ValidationError
 
 from referral_intake.models import Insurance, Patient
@@ -33,12 +33,18 @@ def extract_fields(
     """Extract the small nested referral schema from parsed Markdown."""
 
     extracted = runtime.context.extractor.extract(state["markdown"])
-    return Command(update={"extracted": extracted}, goto="check_routing")
+    return Command(
+        update={
+            "extracted": extracted,
+            "reason_for_referral": extracted.reason_for_referral,
+        },
+        goto="check_routing",
+    )
 
 
 def check_routing(
     state: ReferralState, runtime: Runtime[GraphContext]
-) -> Command[Literal["validate_patient", "reject_referral"]]:
+) -> Command[Literal["validate_patient", "human_review"]]:
     """Apply the initial in-code specialty and subspecialty check."""
 
     extracted = state["extracted"]
@@ -60,11 +66,11 @@ def check_routing(
     if failures:
         return Command(
             update={
-                "outcome": "rejected",
+                "outcome": "human_review_required",
                 "message": "Referral does not match the receiving practice's "
                 f"routing rules: {', '.join(failures)}.",
             },
-            goto="reject_referral",
+            goto="human_review",
         )
     return Command(
         update={"outcome": "processing", "message": ""},
@@ -72,13 +78,22 @@ def check_routing(
     )
 
 
-def reject_referral(state: ReferralState) -> Command[Literal[END]]:
-    """Finalize a routing rejection with a simple message."""
+def human_review(state: ReferralState) -> Command[Literal[END]]:
+    """Pause a routing mismatch until a human records a review note."""
+
+    review_text = interrupt(
+        {
+            "instruction": "Review the routing mismatch and enter review text.",
+            "reason": state["message"],
+        }
+    )
+    if not isinstance(review_text, str) or not review_text.strip():
+        raise ValueError("Human review text must be a non-empty string.")
 
     return Command(
         update={
-            "outcome": "rejected",
-            "message": state.get("message", "Referral rejected by routing rules."),
+            "outcome": "human_reviewed",
+            "review_text": review_text.strip(),
         },
         goto=END,
     )
@@ -118,7 +133,7 @@ def validate_patient(
 
 def validate_insurance(
     state: ReferralState,
-) -> Command[Literal["missing_information", END]]:
+) -> Command[Literal["missing_information", "clinical_requirements"]]:
     """Promote valid extracted insurance data into top-level graph state."""
 
     extracted = state["extracted"].insurance
@@ -141,10 +156,10 @@ def validate_insurance(
         update={
             "insurance": insurance,
             "missing_fields": [],
-            "outcome": "ready_for_next_stage",
+            "outcome": "processing",
             "message": "Patient and insurance information validated.",
         },
-        goto=END,
+        goto="clinical_requirements",
     )
 
 

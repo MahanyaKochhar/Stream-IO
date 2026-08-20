@@ -2,15 +2,19 @@
 
 An initial LangGraph workflow for receiving-provider referral intake. The graph
 parses a referral PDF with LlamaParse, extracts a small structured referral
-object with Gemini through LangChain's `ChatGoogleGenerativeAI`, checks routing,
-and validates the patient and insurance data.
+object through LangChain's provider-neutral `init_chat_model`, checks routing,
+validates the patient and insurance data, then selects and loads a clinical
+requirements skill in a nested subgraph.
 
 Each node owns its next transition with a typed LangGraph `Command`. The graph
 builder declares only the required `START` entry edge.
 
-The current workflow ends when the referral is ready for the next stage,
-requires missing information, or fails the basic routing check. Treatment-plan
-and scheduling behavior are intentionally not implemented yet.
+The initial skill catalog contains only `orthopedics/knee`. Skill selection is a
+deterministic specialty/subspecialty lookup. A deterministic node loads its
+`SKILL.md`, a structured-output call selects supported condition and service
+reference IDs, and the final deterministic node loads those references into
+state. Clinical content, plan generation, execution, treatment-plan, and
+scheduling behavior are intentionally not implemented yet.
 
 ## Setup
 
@@ -20,39 +24,46 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-Add your LlamaCloud and Gemini keys to `.env`:
+Add your LlamaCloud, Gemini, and PostgreSQL settings to `.env`:
 
 ```dotenv
 LLAMA_CLOUD_API_KEY=
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.7-flash
+LLM_PROVIDER=google_genai
+LLM_MODEL=gemini-3.7-flash
+POSTGRES_URI=postgresql://user:password@localhost:5432/referrals
 ```
 
-`GOOGLE_API_KEY` is also accepted in place of `GEMINI_API_KEY`. The structured
-extractor uses Gemini native JSON-schema output and validates the response as a
-Pydantic `ReferralExtraction` before it enters graph state.
+The LLM adapters pass `GEMINI_API_KEY` to the configured provider, use LangChain
+structured output, and validate the response as a Pydantic `ReferralExtraction`
+before it enters graph state. The runner calls
+`PostgresSaver.setup()` to create or migrate LangGraph's checkpoint tables.
 
 ## Graph execution
 
 ```python
 from referral_intake.graph import build_graph
+from referral_intake.persistence import postgres_checkpointer
 from referral_intake.runtime import GraphContext
 
-graph = build_graph()
-for part in graph.stream(
-    {"pdf_path": "referral.pdf"},
-    context=GraphContext(),
-    stream_mode="updates",
-    version="v2",
-):
-    if part["type"] == "updates":
+config = {"configurable": {"thread_id": "referral-123"}}
+with postgres_checkpointer() as checkpointer:
+    graph = build_graph(checkpointer=checkpointer)
+    for part in graph.stream(
+        {"pdf_path": "referral.pdf"},
+        config=config,
+        context=GraphContext(),
+        stream_mode="updates",
+        subgraphs=True,
+        version="v2",
+    ):
         print(part["data"])
 ```
 
 Use `invoke()` when only the final state is needed. Use `stream()` with
-`stream_mode="updates"` to observe each node update as the graph runs. The
-`main.py` runner streams node updates and retains the latest `values` event so
-it can print the final state without executing the graph a second time.
+`stream_mode="updates"` and `subgraphs=True` to observe both parent and subgraph
+node updates. The `main.py` runner retains the latest `values` event so it can
+print the final state without executing the graph a second time.
 
 See [the workflow baseline](docs/referral-intake-agent-flow.md) for the node
 diagram and [the tests](tests/test_graph.py) for complete in-memory examples.
@@ -65,5 +76,7 @@ Set `PDF_PATH` in `main.py`, then run the real graph:
 python main.py
 ```
 
-The entry point prints every completed node and the final graph state. It uses
-the real `GraphContext`, so both cloud API keys are required for a complete run.
+The entry point prints every completed node and the final graph state. A routing
+mismatch pauses at `human_review`, asks for non-empty reviewer text, and resumes
+with the same checkpoint thread. Both cloud API keys and `POSTGRES_URI` are
+required for a complete run.

@@ -21,7 +21,7 @@ from referral_intake.state import ReferralState
 
 
 def build_graph(
-    *, checkpointer: BaseCheckpointSaver | None = None
+    checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the initial referral intake workflow."""
 
@@ -33,9 +33,7 @@ def build_graph(
     builder.add_node("human_review", human_review)
     builder.add_node("validate_patient", validate_patient)
     builder.add_node("validate_insurance", validate_insurance)
-    builder.add_node(
-        "clinical_requirements", build_clinical_requirements_graph()
-    )
+    builder.add_node("clinical_requirements", build_clinical_requirements_graph())
     builder.add_node("missing_information", missing_information)
 
     builder.add_edge(START, "parse_pdf")

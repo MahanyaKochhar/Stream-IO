@@ -4,7 +4,8 @@ An initial LangGraph workflow for receiving-provider referral intake. The graph
 parses a referral PDF with LlamaParse, extracts a small structured referral
 object through LangChain's provider-neutral `init_chat_model`, checks routing,
 validates the patient and insurance data, then selects and loads a clinical
-requirements skill in a nested subgraph.
+requirements skill, compiles its requirements, and extracts their values in a
+nested subgraph.
 
 Each node owns its next transition with a typed LangGraph `Command`. The graph
 builder declares only the required `START` entry edge.
@@ -12,9 +13,13 @@ builder declares only the required `START` entry edge.
 The initial skill catalog contains only `orthopedics/knee`. Skill selection is a
 deterministic specialty/subspecialty lookup. A deterministic node loads its
 `SKILL.md`, a structured-output call selects supported condition and service
-reference IDs, and the final deterministic node loads those references into
-state. Clinical content, plan generation, execution, treatment-plan, and
-scheduling behavior are intentionally not implemented yet.
+reference IDs. Deterministic nodes load the selected files and compile their
+stable requirement definitions. A second structured-output call extracts one
+finding per requirement from the referral Markdown. The parent receives one
+top-level `clinical_requirements` result; loaded Markdown and other working
+state remain private to the subgraph. Post-extraction validation, plan
+generation, execution, treatment-plan, and scheduling behavior are not yet
+implemented.
 
 ## Setup
 

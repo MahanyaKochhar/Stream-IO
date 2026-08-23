@@ -3,10 +3,13 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from referral_intake.clinical_requirements.models import (
     ClinicalSkillName,
     ConditionReference,
     ReferenceSelection,
+    RequirementDefinition,
     ServiceReference,
 )
 
@@ -39,19 +42,13 @@ SKILL_LOOKUP = {
 }
 
 REFERENCE_FILES = {
-    ConditionReference.OSTEOARTHRITIS: Path(
-        "references/conditions/osteoarthritis.md"
-    ),
+    ConditionReference.OSTEOARTHRITIS: Path("references/conditions/osteoarthritis.md"),
     ConditionReference.ACL_TEAR: Path("references/conditions/acl-tear.md"),
-    ConditionReference.MENISCUS_TEAR: Path(
-        "references/conditions/meniscus-tear.md"
-    ),
+    ConditionReference.MENISCUS_TEAR: Path("references/conditions/meniscus-tear.md"),
     ServiceReference.SURGICAL_EVALUATION: Path(
         "references/services/surgical-evaluation.md"
     ),
-    ServiceReference.GENERAL_CONSULT: Path(
-        "references/services/general-consult.md"
-    ),
+    ServiceReference.GENERAL_CONSULT: Path("references/services/general-consult.md"),
 }
 
 
@@ -73,9 +70,7 @@ def select_skill(
 def load_skill_instructions(skill_name: ClinicalSkillName) -> str:
     """Load the selected skill's complete SKILL.md instructions."""
 
-    return _skill_directory(skill_name).joinpath("SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    return _skill_directory(skill_name).joinpath("SKILL.md").read_text(encoding="utf-8")
 
 
 def load_references(
@@ -85,13 +80,42 @@ def load_references(
     """Load selected references keyed only by their logical IDs."""
 
     skill_directory = _skill_directory(skill_name)
-    references = (selection.condition, selection.service)
+    references = tuple(
+        reference
+        for reference in (selection.condition, selection.service)
+        if reference is not None
+    )
     return {
-        reference.value: skill_directory.joinpath(
-            REFERENCE_FILES[reference]
-        ).read_text(encoding="utf-8")
+        reference.value: skill_directory.joinpath(REFERENCE_FILES[reference]).read_text(
+            encoding="utf-8"
+        )
         for reference in references
     }
+
+
+def compile_requirements(
+    skill_instructions: str,
+    reference_contents: dict[str, str],
+) -> list[RequirementDefinition]:
+    """Compile skill and reference frontmatter into one ordered definition list."""
+
+    sources = [("skill", skill_instructions), *sorted(reference_contents.items())]
+    requirements: list[RequirementDefinition] = []
+    seen: set[str] = set()
+
+    for source, content in sources:
+        for item in _requirement_metadata(content).get("requirements", []):
+            requirement = RequirementDefinition.model_validate(
+                {**item, "source": source}
+            )
+            if requirement.id in seen:
+                raise ValueError(f"Duplicate requirement ID: {requirement.id}")
+            seen.add(requirement.id)
+            requirements.append(requirement)
+
+    if not requirements:
+        raise ValueError("Selected clinical skill contains no requirements.")
+    return requirements
 
 
 def _skill_directory(skill_name: ClinicalSkillName) -> Path:
@@ -101,3 +125,13 @@ def _skill_directory(skill_name: ClinicalSkillName) -> Path:
 
 def _normalize(value: str | None) -> str:
     return value.strip().casefold() if value else ""
+
+
+def _requirement_metadata(content: str) -> dict[str, object]:
+    """Read the YAML block under a Markdown requirement-definitions heading."""
+
+    marker = "## Requirement definitions\n\n```yaml\n"
+    if marker not in content:
+        return {}
+    yaml_block = content.split(marker, maxsplit=1)[1].split("\n```", maxsplit=1)[0]
+    return yaml.safe_load(yaml_block) or {}

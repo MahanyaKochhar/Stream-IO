@@ -5,11 +5,20 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from referral_intake.clinical_requirements.catalog import select_skill
+from referral_intake.clinical_requirements.catalog import (
+    compile_requirements,
+    load_references,
+    load_skill_instructions,
+    select_skill,
+)
 from referral_intake.clinical_requirements.models import (
     ClinicalSkillName,
     ConditionReference,
     ReferenceSelection,
+    RequirementDefinition,
+    RequirementExtraction,
+    RequirementFinding,
+    RequirementStatus,
     ServiceReference,
 )
 from referral_intake.extraction import referral_output_schema, validate_extraction
@@ -17,6 +26,7 @@ from referral_intake.graph import build_graph
 from referral_intake.llm import (
     StructuredReferenceSelector,
     StructuredReferralExtractor,
+    StructuredRequirementExtractor,
 )
 from referral_intake.models import (
     ExtractedInsurance,
@@ -46,13 +56,12 @@ class StubExtractor:
 class StubReferenceSelector:
     def select(
         self,
-        *,
         skill_instructions: str,
         condition: str | None,
         service: str | None,
         reason_for_referral: str | None,
     ) -> ReferenceSelection:
-        assert "# Orthopedic Knee Clinical Requirements" in skill_instructions
+        assert "# Knee Referral Intake" in skill_instructions
         assert condition == "Meniscus tear"
         assert service == "Consultation; Evaluate and Treat"
         assert reason_for_referral == (
@@ -61,6 +70,25 @@ class StubReferenceSelector:
         return ReferenceSelection(
             condition=ConditionReference.MENISCUS_TEAR,
             service=ServiceReference.GENERAL_CONSULT,
+        )
+
+
+class StubRequirementExtractor:
+    def extract(
+        self,
+        markdown: str,
+        requirements: list[RequirementDefinition],
+    ) -> RequirementExtraction:
+        assert markdown == "# Synthetic referral"
+        assert requirements
+        return RequirementExtraction(
+            findings=[
+                RequirementFinding(
+                    requirement_id=requirement.id,
+                    status=RequirementStatus.NOT_DOCUMENTED,
+                )
+                for requirement in requirements
+            ]
         )
 
 
@@ -89,9 +117,7 @@ def extraction(**overrides: object) -> ReferralExtraction:
         "service": "Consultation; Evaluate and Treat",
         "condition": "Meniscus tear",
         "priority": "Routine",
-        "reason_for_referral": (
-            "Persistent right knee pain after twisting injury."
-        ),
+        "reason_for_referral": ("Persistent right knee pain after twisting injury."),
         "referral_type": ReferralType.MENISCUS_INTERNAL_DERANGEMENT,
     }
     values.update(overrides)
@@ -104,6 +130,7 @@ def run_graph(result: ReferralExtraction) -> dict[str, object]:
         parser=StubParser(),
         extractor=StubExtractor(result),
         reference_selector=StubReferenceSelector(),
+        requirement_extractor=StubRequirementExtractor(),
     )
     return graph.invoke({"pdf_path": "referral.pdf"}, context=context)
 
@@ -114,6 +141,7 @@ def test_stream_reports_each_completed_node() -> None:
         parser=StubParser(),
         extractor=StubExtractor(extraction()),
         reference_selector=StubReferenceSelector(),
+        requirement_extractor=StubRequirementExtractor(),
     )
 
     parts = list(
@@ -131,9 +159,7 @@ def test_stream_reports_each_completed_node() -> None:
         if part["type"] == "updates"
         for node_name in part["data"]
     ]
-    final_state = [
-        part["data"] for part in parts if part["type"] == "values"
-    ][-1]
+    final_state = [part["data"] for part in parts if part["type"] == "values"][-1]
 
     assert completed_nodes == [
         "parse_pdf",
@@ -145,6 +171,8 @@ def test_stream_reports_each_completed_node() -> None:
         "load_skill",
         "select_references",
         "load_references",
+        "compile_requirements",
+        "extract_requirement_values",
         "clinical_requirements",
     ]
     assert final_state["outcome"] == "ready_for_next_stage"
@@ -157,28 +185,77 @@ def test_valid_referral_reaches_next_stage() -> None:
     assert result["patient"].last_name == "Turner"
     assert result["patient"].sex == "Male"
     assert result["insurance"].member_id == "SHP-88294317"
-    assert result["reason_for_referral"] == (
+    assert result["extracted"].reason_for_referral == (
         "Persistent right knee pain after twisting injury."
     )
+    assert "reason_for_referral" not in result
     assert result["missing_fields"] == []
-    assert result["selected_skill"] is ClinicalSkillName.KNEE
-    assert "# Orthopedic Knee Clinical Requirements" in result["skill_instructions"]
-    assert result["selected_references"] == ReferenceSelection(
+    clinical = result["clinical_requirements"]
+    assert clinical.skill is ClinicalSkillName.KNEE
+    assert clinical.references == ReferenceSelection(
         condition=ConditionReference.MENISCUS_TEAR,
         service=ServiceReference.GENERAL_CONSULT,
     )
-    assert set(result["reference_contents"]) == {
-        "conditions/meniscus-tear",
-        "services/general-consult",
-    }
-    assert "# Meniscus Tear" in result["reference_contents"][
-        "conditions/meniscus-tear"
-    ]
+    requirement_ids = {requirement.id for requirement in clinical.requirements}
+    assert "knee.affected_side" in requirement_ids
+    assert "meniscus.mechanical_symptoms" in requirement_ids
+    assert "consult.question" in requirement_ids
+    assert {finding.requirement_id for finding in clinical.findings} == requirement_ids
+    assert "selected_skill" not in result
+    assert "skill_instructions" not in result
+    assert "selected_references" not in result
+    assert "reference_contents" not in result
+    assert "compiled_requirements" not in result
 
 
 def test_skill_selection_uses_only_specialty_and_subspecialty() -> None:
     assert select_skill("Orthopedic Surgery", "Knee") is ClinicalSkillName.KNEE
     assert select_skill("orthopaedics", "knee") is ClinicalSkillName.KNEE
+
+
+def test_reference_loader_accepts_no_clear_reference_match() -> None:
+    assert load_references(ClinicalSkillName.KNEE, ReferenceSelection()) == {}
+
+
+def test_knee_skill_routes_to_every_loadable_reference() -> None:
+    instructions = load_skill_instructions(ClinicalSkillName.KNEE)
+
+    for condition in ConditionReference:
+        assert f"`{condition.value}`" in instructions
+        contents = load_references(
+            ClinicalSkillName.KNEE,
+            ReferenceSelection(condition=condition),
+        )
+        assert set(contents) == {condition.value}
+
+    for service in ServiceReference:
+        assert f"`{service.value}`" in instructions
+        contents = load_references(
+            ClinicalSkillName.KNEE,
+            ReferenceSelection(service=service),
+        )
+        assert set(contents) == {service.value}
+
+
+def test_requirements_compile_deterministically_from_selected_content() -> None:
+    instructions = load_skill_instructions(ClinicalSkillName.KNEE)
+    contents = load_references(
+        ClinicalSkillName.KNEE,
+        ReferenceSelection(
+            condition=ConditionReference.MENISCUS_TEAR,
+            service=ServiceReference.GENERAL_CONSULT,
+        ),
+    )
+
+    requirements = compile_requirements(instructions, contents)
+
+    assert requirements[0].id == "knee.affected_side"
+    assert {requirement.source for requirement in requirements} == {
+        "skill",
+        "conditions/meniscus-tear",
+        "services/general-consult",
+    }
+    assert len({requirement.id for requirement in requirements}) == len(requirements)
 
 
 def test_routing_mismatch_pauses_for_human_review() -> None:
@@ -293,8 +370,9 @@ def test_referral_type_rejects_unsupported_values() -> None:
 
 def test_graph_context_uses_structured_llm_adapters_by_default() -> None:
     assert isinstance(GraphContext().extractor, StructuredReferralExtractor)
+    assert isinstance(GraphContext().reference_selector, StructuredReferenceSelector)
     assert isinstance(
-        GraphContext().reference_selector, StructuredReferenceSelector
+        GraphContext().requirement_extractor, StructuredRequirementExtractor
     )
 
 
@@ -312,7 +390,6 @@ def test_referral_extractor_uses_initialized_structured_model(
         def with_structured_output(
             self,
             schema: type[ReferralExtraction],
-            *,
             method: str,
         ) -> StubStructuredModel:
             assert schema is ReferralExtraction
@@ -320,7 +397,7 @@ def test_referral_extractor_uses_initialized_structured_model(
             return StubStructuredModel()
 
     def stub_init_chat_model(
-        *, model: str, model_provider: str, max_retries: int, api_key: str
+        model: str, model_provider: str, max_retries: int, api_key: str
     ) -> StubChatModel:
         assert model == "gemini-3.7-flash"
         assert model_provider == "google_genai"
@@ -363,7 +440,6 @@ def test_reference_selector_reads_skill_and_returns_logical_ids(
         def with_structured_output(
             self,
             schema: type[ReferenceSelection],
-            *,
             method: str,
         ) -> StubStructuredModel:
             assert schema is ReferenceSelection
@@ -371,7 +447,7 @@ def test_reference_selector_reads_skill_and_returns_logical_ids(
             return StubStructuredModel()
 
     def stub_init_chat_model(
-        *, model: str, model_provider: str, max_retries: int, api_key: str
+        model: str, model_provider: str, max_retries: int, api_key: str
     ) -> StubChatModel:
         assert model == "gemini-3.7-flash"
         assert model_provider == "google_genai"
@@ -394,6 +470,61 @@ def test_reference_selector_reads_skill_and_returns_logical_ids(
         condition="Meniscus tear",
         service="Consultation",
         reason_for_referral="Knee pain",
+    )
+
+    assert result == expected
+
+
+def test_requirement_extractor_uses_compiled_definitions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requirement = RequirementDefinition(
+        id="meniscus.mechanical_symptoms",
+        description="Catching, clicking, locking, or giving way.",
+        source="conditions/meniscus-tear",
+    )
+    expected = RequirementExtraction(
+        findings=[
+            RequirementFinding(
+                requirement_id=requirement.id,
+                status=RequirementStatus.DOCUMENTED,
+                value="Intermittent catching; denies locking or giving way.",
+            )
+        ]
+    )
+
+    class StubStructuredModel:
+        def invoke(self, messages: list[tuple[str, str]]) -> RequirementExtraction:
+            prompt = messages[1][1]
+            assert '"id": "meniscus.mechanical_symptoms"' in prompt
+            assert "# Synthetic referral" in prompt
+            assert "conditions/meniscus-tear" not in prompt
+            return expected
+
+    class StubChatModel:
+        def with_structured_output(
+            self,
+            schema: type[RequirementExtraction],
+            method: str,
+        ) -> StubStructuredModel:
+            assert schema is RequirementExtraction
+            assert method == "json_schema"
+            return StubStructuredModel()
+
+    def stub_init_chat_model(
+        model: str, model_provider: str, max_retries: int, api_key: str
+    ) -> StubChatModel:
+        return StubChatModel()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "referral_intake.llm.init_chat_model",
+        stub_init_chat_model,
+    )
+
+    result = StructuredRequirementExtractor().extract(
+        markdown="# Synthetic referral",
+        requirements=[requirement],
     )
 
     assert result == expected

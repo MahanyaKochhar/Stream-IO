@@ -1,15 +1,15 @@
 # Referral Intake Agent Flow
 
-Baseline version: `v0.8`
+Baseline version: `v1.0`
 
-Updated: 2026-08-20
+Updated: 2026-08-23
 
-Status: initial skill and reference-loading flow implemented
+Status: clinical subgraph compiles requirements and extracts their values
 
 The compiled `clinical_requirements` graph is one node in the parent referral
-graph after insurance validation. Its current executable scope selects one
-catalogued skill, loads its instructions, selects supported logical references,
-and loads their content.
+graph after insurance validation. Its working fields remain private; the parent
+receives one typed `clinical_requirements` result containing the selected skill,
+logical references, compiled requirements, and extracted findings.
 
 ```mermaid
 flowchart TD
@@ -29,11 +29,15 @@ flowchart TD
         LOAD_SKILL[Load SKILL.md]
         SELECT_REFERENCES[Select condition and service<br/>reference IDs]
         LOAD_REFERENCES[Load selected references]
+        COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
+        EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
         LOAD_SKILL --> SELECT_REFERENCES
         SELECT_REFERENCES --> LOAD_REFERENCES
+        LOAD_REFERENCES --> COMPILE_REQUIREMENTS
+        COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
     end
 
     HUMAN_REVIEW[Human review<br/>enter review text]
@@ -53,7 +57,7 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
-    LOAD_REFERENCES --> NEXT_STAGE
+    EXTRACT_REQUIREMENTS --> NEXT_STAGE
 
     classDef input fill:#e8f1ff,stroke:#2563eb,color:#172554,stroke-width:2px;
     classDef process fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:2px;
@@ -65,7 +69,7 @@ flowchart TD
 
     class START,CR_START input;
     class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES subagent;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
     class NEXT_STAGE success;
     class MISSING_INFO,REVIEWED attention;
@@ -94,10 +98,14 @@ node. Internally, its initial linear flow is:
 | `select_skill` | Deterministically map normalized specialty and subspecialty to a typed skill ID | `Command(goto="load_skill")` |
 | `load_skill` | Deterministically load the selected skill's complete `SKILL.md` | `Command(goto="select_references")` |
 | `select_references` | Read `SKILL.md` and return one supported condition ID and one supported service ID | `Command(goto="load_references")` |
-| `load_references` | Deterministically load both selected files, keyed by logical reference ID | `Command(goto=END)` |
+| `load_references` | Deterministically load both selected files, keyed by logical reference ID | `Command(goto="compile_requirements")` |
+| `compile_requirements` | Deterministically merge the requirement definitions in `SKILL.md` and the selected references | `Command(goto="extract_requirement_values")` |
+| `extract_requirement_values` | Use structured LLM output to extract one finding per compiled requirement from referral Markdown | `Command(goto=END)` |
 
-The initial catalog contains only `orthopedics/knee`. All files are placeholders
-and intentionally contain no uncurated clinical rules.
+The initial catalog contains only `orthopedics/knee`. Each Markdown file keeps
+human-readable instructions and a YAML requirement-definition block with stable
+IDs. The compiler reads those blocks without an LLM, preserves their source
+logical IDs, rejects duplicates, and produces one ordered requirement list.
 
 ```text
 skills/
@@ -141,18 +149,53 @@ ReferralState
 │   └── referral_type: ReferralType
 ├── patient: Patient                 # includes required validated sex
 ├── insurance: Insurance             # present only after validation
-├── reason_for_referral              # promoted during extraction
-├── selected_skill: ClinicalSkillName
-├── skill_instructions               # complete SKILL.md
-├── selected_references: ReferenceSelection
-│   ├── condition                    # logical ID only
-│   └── service                      # logical ID only
-├── reference_contents               # keyed by logical reference IDs
+├── clinical_requirements: ClinicalRequirementsResult
+│   ├── skill: ClinicalSkillName
+│   ├── references: ReferenceSelection
+│   │   ├── condition                # logical ID only
+│   │   └── service                  # logical ID only
+│   ├── requirements: list[RequirementDefinition]
+│   │   ├── id
+│   │   ├── description
+│   │   ├── required
+│   │   └── source                   # logical ID, never a file path
+│   └── findings: list[RequirementFinding]
+│       ├── requirement_id
+│       ├── status                   # documented or not_documented
+│       └── value
 ├── missing_fields
 ├── outcome
 ├── message
 └── review_text                     # present after human review
 ```
+
+```text
+ClinicalRequirementsState extends ReferralState
+│                                     # parent keys are inherited, not redeclared
+├── selected_skill                    # private subgraph working field
+├── skill_instructions
+├── selected_references
+├── reference_contents
+├── compiled_requirements
+└── inherited clinical_requirements   # shared parent output
+```
+
+Because the compiled subgraph is registered directly as the parent graph's
+`clinical_requirements` node, LangGraph passes matching parent channels into it.
+The subgraph nodes use `ClinicalRequirementsState`, which inherits
+`ReferralState` and adds only private working fields. The shared parent keys are
+therefore defined once, and private fields are filtered out when the subgraph
+returns. No separate state object is manually passed between the graphs.
+
+`reason_for_referral` is read directly from `state.extracted`. Nodes write
+`outcome` and `message` only for meaningful terminal, missing-information, or
+human-review results; routine processing transitions are represented by
+`Command(goto=...)` alone.
+
+The requirement extraction LLM receives only the compiled definitions and full
+referral Markdown. It returns structured findings and is instructed to avoid
+inference. Per the current scope, no deterministic post-extraction validation
+node is present yet.
 
 Service clients and routing configuration are passed through LangGraph runtime
 context and are not part of referral state. PostgreSQL checkpoints persist each
@@ -160,7 +203,7 @@ run under the configured `thread_id` so an interrupt can resume safely.
 
 ## Deferred work
 
-- Curate the knee clinical skill and reference content.
+- Add deterministic validation for exact requirement coverage and IDs.
 - Add shoulder and spine skill directories when their content is ready.
 - Add `generate_plan` and `execute_plan` nodes after the skill format is stable.
 - Define plan state, execution outputs, and failure paths.

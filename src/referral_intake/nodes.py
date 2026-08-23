@@ -22,7 +22,7 @@ def parse_pdf(
     if not markdown.strip():
         raise ValueError("The referral PDF produced empty Markdown.")
     return Command(
-        update={"markdown": markdown, "outcome": "processing"},
+        update={"markdown": markdown},
         goto="extract_fields",
     )
 
@@ -34,10 +34,7 @@ def extract_fields(
 
     extracted = runtime.context.extractor.extract(state["markdown"])
     return Command(
-        update={
-            "extracted": extracted,
-            "reason_for_referral": extracted.reason_for_referral,
-        },
+        update={"extracted": extracted},
         goto="check_routing",
     )
 
@@ -72,10 +69,7 @@ def check_routing(
             },
             goto="human_review",
         )
-    return Command(
-        update={"outcome": "processing", "message": ""},
-        goto="validate_patient",
-    )
+    return Command(goto="validate_patient")
 
 
 def human_review(state: ReferralState) -> Command[Literal[END]]:
@@ -124,8 +118,6 @@ def validate_patient(
         update={
             "patient": patient,
             "missing_fields": [],
-            "outcome": "processing",
-            "message": "",
         },
         goto="validate_insurance",
     )
@@ -156,8 +148,6 @@ def validate_insurance(
         update={
             "insurance": insurance,
             "missing_fields": [],
-            "outcome": "processing",
-            "message": "Patient and insurance information validated.",
         },
         goto="clinical_requirements",
     )

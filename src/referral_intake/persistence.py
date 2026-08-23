@@ -11,9 +11,14 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 
 from referral_intake.clinical_requirements.models import (
+    ClinicalRequirementsResult,
     ClinicalSkillName,
     ConditionReference,
     ReferenceSelection,
+    RequirementDefinition,
+    RequirementExtraction,
+    RequirementFinding,
+    RequirementStatus,
     ServiceReference,
 )
 from referral_intake.models import (
@@ -45,9 +50,14 @@ def postgres_checkpointer() -> Iterator[PostgresSaver]:
             Provider,
             ReferralExtraction,
             ReferralType,
+            ClinicalRequirementsResult,
             ClinicalSkillName,
             ConditionReference,
             ReferenceSelection,
+            RequirementDefinition,
+            RequirementExtraction,
+            RequirementFinding,
+            RequirementStatus,
             ServiceReference,
         ]
     )

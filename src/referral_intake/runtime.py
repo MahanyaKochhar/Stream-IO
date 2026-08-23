@@ -6,10 +6,13 @@ from typing import Protocol
 
 from referral_intake.clinical_requirements.models import (
     ReferenceSelection,
+    RequirementDefinition,
+    RequirementExtraction,
 )
 from referral_intake.llm import (
     StructuredReferenceSelector,
     StructuredReferralExtractor,
+    StructuredRequirementExtractor,
 )
 from referral_intake.models import ReferralExtraction
 
@@ -31,12 +34,21 @@ class ClinicalReferenceSelector(Protocol):
 
     def select(
         self,
-        *,
         skill_instructions: str,
         condition: str | None,
         service: str | None,
         reason_for_referral: str | None,
     ) -> ReferenceSelection: ...
+
+
+class ClinicalRequirementExtractor(Protocol):
+    """Extract values for deterministic clinical requirement definitions."""
+
+    def extract(
+        self,
+        markdown: str,
+        requirements: list[RequirementDefinition],
+    ) -> RequirementExtraction: ...
 
 
 class LlamaParsePdfParser:
@@ -76,9 +88,7 @@ class RoutingPolicy:
     specialties: frozenset[str] = field(
         default_factory=lambda: frozenset({"orthopedic surgery", "orthopaedic surgery"})
     )
-    subspecialties: frozenset[str] = field(
-        default_factory=lambda: frozenset({"knee"})
-    )
+    subspecialties: frozenset[str] = field(default_factory=lambda: frozenset({"knee"}))
 
 
 @dataclass(frozen=True)
@@ -86,10 +96,11 @@ class GraphContext:
     """Dependencies and policy supplied when invoking the graph."""
 
     parser: PdfParser = field(default_factory=LlamaParsePdfParser)
-    extractor: ReferralExtractor = field(
-        default_factory=StructuredReferralExtractor
-    )
+    extractor: ReferralExtractor = field(default_factory=StructuredReferralExtractor)
     reference_selector: ClinicalReferenceSelector = field(
         default_factory=StructuredReferenceSelector
+    )
+    requirement_extractor: ClinicalRequirementExtractor = field(
+        default_factory=StructuredRequirementExtractor
     )
     routing_policy: RoutingPolicy = field(default_factory=RoutingPolicy)

@@ -15,11 +15,15 @@ flowchart TD
         LOAD_SKILL[Load SKILL.md]
         SELECT_REFERENCES[Select condition and service<br/>reference IDs]
         LOAD_REFERENCES[Load selected references]
+        COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
+        EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
         LOAD_SKILL --> SELECT_REFERENCES
         SELECT_REFERENCES --> LOAD_REFERENCES
+        LOAD_REFERENCES --> COMPILE_REQUIREMENTS
+        COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
     end
 
     HUMAN_REVIEW[Human review<br/>enter review text]
@@ -39,7 +43,7 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
-    LOAD_REFERENCES --> NEXT_STAGE
+    EXTRACT_REQUIREMENTS --> NEXT_STAGE
 
     classDef input fill:#e8f1ff,stroke:#2563eb,color:#172554,stroke-width:2px;
     classDef process fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:2px;
@@ -51,7 +55,7 @@ flowchart TD
 
     class START,CR_START input;
     class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES subagent;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
     class NEXT_STAGE success;
     class MISSING_INFO,REVIEWED attention;

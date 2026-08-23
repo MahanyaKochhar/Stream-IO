@@ -1,4 +1,4 @@
-"""Structured models for clinical skill selection."""
+"""Structured models for clinical requirement extraction."""
 
 from enum import StrEnum
 
@@ -31,5 +31,52 @@ class ReferenceSelection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    condition: ConditionReference
-    service: ServiceReference
+    condition: ConditionReference | None = None
+    service: ServiceReference | None = None
+
+
+class RequirementDefinition(BaseModel):
+    """One requirement compiled deterministically from skill content."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    description: str
+    required: bool = True
+    source: str
+
+
+class RequirementStatus(StrEnum):
+    """Whether the referral packet documents a requirement."""
+
+    DOCUMENTED = "documented"
+    NOT_DOCUMENTED = "not_documented"
+
+
+class RequirementFinding(BaseModel):
+    """Value extracted from the referral for one compiled requirement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requirement_id: str
+    status: RequirementStatus
+    value: str | None = None
+
+
+class RequirementExtraction(BaseModel):
+    """Structured LLM output for all compiled requirements."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[RequirementFinding]
+
+
+class ClinicalRequirementsResult(BaseModel):
+    """Single clinical-requirements output returned to the parent graph."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill: ClinicalSkillName
+    references: ReferenceSelection
+    requirements: list[RequirementDefinition]
+    findings: list[RequirementFinding]

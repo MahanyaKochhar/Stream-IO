@@ -1,42 +1,30 @@
 """Provider-neutral structured-output adapters."""
 
+import json
 import os
-from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel
 
-from referral_intake.clinical_requirements.models import ReferenceSelection
+from referral_intake.clinical_requirements.models import (
+    ReferenceSelection,
+    RequirementDefinition,
+    RequirementExtraction,
+)
 from referral_intake.extraction import EXTRACTION_INSTRUCTIONS, validate_extraction
 from referral_intake.models import ReferralExtraction
 
-DEFAULT_LLM_PROVIDER = "google_genai"
-DEFAULT_LLM_MODEL = "gemini-3.7-flash"
 
-
-def _structured_model(
-    schema: type[BaseModel],
-    *,
-    provider: str | None,
-    model: str | None,
-):
+def _structured_model(schema: type[BaseModel]):
     """Initialize the configured chat model with structured output."""
 
     load_dotenv()
-    provider_name = provider or os.getenv("LLM_PROVIDER") or DEFAULT_LLM_PROVIDER
-    model_name = (
-        model
-        or os.getenv("LLM_MODEL")
-        or os.getenv("GEMINI_MODEL")
-        or DEFAULT_LLM_MODEL
-    )
+    provider_name = _required_setting("LLM_PROVIDER")
+    model_name = _required_setting("LLM_MODEL")
     model_options: dict[str, object] = {}
     if provider_name == "google_genai":
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("Gemini credentials are missing. Set GEMINI_API_KEY.")
-        model_options["api_key"] = api_key
+        model_options["api_key"] = _required_setting("GEMINI_API_KEY")
 
     llm = init_chat_model(
         model=model_name,
@@ -47,19 +35,20 @@ def _structured_model(
     return llm.with_structured_output(schema, method="json_schema")
 
 
-@dataclass(frozen=True)
+def _required_setting(name: str) -> str:
+    """Read a required LLM setting from the environment."""
+
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} is not configured in .env.")
+    return value
+
+
 class StructuredReferralExtractor:
     """Extract a validated referral object with structured output."""
 
-    provider: str | None = None
-    model: str | None = None
-
     def extract(self, markdown: str) -> ReferralExtraction:
-        structured_llm = _structured_model(
-            ReferralExtraction,
-            provider=self.provider,
-            model=self.model,
-        )
+        structured_llm = _structured_model(ReferralExtraction)
         prompt = f"""{EXTRACTION_INSTRUCTIONS}
 
 Referral Markdown:
@@ -73,32 +62,24 @@ Referral Markdown:
         return validate_extraction(result)
 
 
-@dataclass(frozen=True)
 class StructuredReferenceSelector:
     """Select supported logical references from loaded skill instructions."""
 
-    provider: str | None = None
-    model: str | None = None
-
     def select(
         self,
-        *,
         skill_instructions: str,
         condition: str | None,
         service: str | None,
         reason_for_referral: str | None,
     ) -> ReferenceSelection:
-        structured_llm = _structured_model(
-            ReferenceSelection,
-            provider=self.provider,
-            model=self.model,
-        )
+        structured_llm = _structured_model(ReferenceSelection)
         messages = [
             (
                 "system",
-                "Read the skill instructions and select exactly one supported "
-                "condition reference and one supported service reference. "
-                "Return only their logical IDs through the structured fields.\n\n"
+                "Read the skill instructions. Select a supported condition "
+                "reference and service reference only when each is clearly "
+                "matched. Return null for an unsupported or ambiguous category. "
+                "Return only logical IDs through the structured fields.\n\n"
                 f"Skill instructions:\n{skill_instructions}",
             ),
             (
@@ -113,3 +94,37 @@ class StructuredReferenceSelector:
         if isinstance(result, ReferenceSelection):
             return result
         return ReferenceSelection.model_validate(result)
+
+
+class StructuredRequirementExtractor:
+    """Extract values for a compiled set of clinical requirements."""
+
+    def extract(
+        self,
+        markdown: str,
+        requirements: list[RequirementDefinition],
+    ) -> RequirementExtraction:
+        structured_llm = _structured_model(RequirementExtraction)
+        requirement_data = [
+            requirement.model_dump(exclude={"source"}) for requirement in requirements
+        ]
+        messages = [
+            (
+                "system",
+                "Extract only information explicitly documented in the referral. "
+                "Return exactly one finding for every requirement ID. Use "
+                "documented with a concise value when present; otherwise use "
+                "not_documented with a null value. Do not infer clinical facts.",
+            ),
+            (
+                "human",
+                "Requirements:\n"
+                f"{json.dumps(requirement_data, indent=2)}\n\n"
+                "Referral Markdown:\n"
+                f"<referral>\n{markdown}\n</referral>",
+            ),
+        ]
+        result = structured_llm.invoke(messages)
+        if isinstance(result, RequirementExtraction):
+            return result
+        return RequirementExtraction.model_validate(result)

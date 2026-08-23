@@ -62,9 +62,7 @@ class ReferralType(StrEnum):
     GENERAL_KNEE_PAIN = "general knee pain"
     MENISCUS_INTERNAL_DERANGEMENT = "meniscus/internal derangement"
     ACL_PCL_INJURY = "ACL/PCL injury"
-    KNEE_OSTEOARTHRITIS_JOINT_REPLACEMENT = (
-        "knee osteoarthritis/joint replacement"
-    )
+    KNEE_OSTEOARTHRITIS_JOINT_REPLACEMENT = "knee osteoarthritis/joint replacement"
 
 
 class ReferralExtraction(DomainModel):

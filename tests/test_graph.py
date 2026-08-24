@@ -15,6 +15,7 @@ from referral_intake.clinical_requirements.models import (
     ClinicalSkillName,
     ConditionReference,
     ReferenceSelection,
+    ReferralDecision,
     RequirementDefinition,
     RequirementExtraction,
     RequirementFinding,
@@ -124,19 +125,31 @@ def extraction(**overrides: object) -> ReferralExtraction:
     return ReferralExtraction.model_validate(values)
 
 
-def run_graph(result: ReferralExtraction) -> dict[str, object]:
-    graph = build_graph()
+def run_graph(
+    result: ReferralExtraction,
+    decision: str = "approve",
+) -> dict[str, object]:
+    graph = build_graph(checkpointer=InMemorySaver())
     context = GraphContext(
         parser=StubParser(),
         extractor=StubExtractor(result),
         reference_selector=StubReferenceSelector(),
         requirement_extractor=StubRequirementExtractor(),
     )
-    return graph.invoke({"pdf_path": "referral.pdf"}, context=context)
+    config = {"configurable": {"thread_id": "clinical-review-test"}}
+    paused = graph.invoke(
+        {"pdf_path": "referral.pdf"},
+        config=config,
+        context=context,
+    )
+    if "__interrupt__" not in paused:
+        return paused
+    assert paused["__interrupt__"][0].value["options"] == ["approve", "reject"]
+    return graph.invoke(Command(resume=decision), config=config)
 
 
 def test_stream_reports_each_completed_node() -> None:
-    graph = build_graph()
+    graph = build_graph(checkpointer=InMemorySaver())
     context = GraphContext(
         parser=StubParser(),
         extractor=StubExtractor(extraction()),
@@ -144,9 +157,11 @@ def test_stream_reports_each_completed_node() -> None:
         requirement_extractor=StubRequirementExtractor(),
     )
 
+    config = {"configurable": {"thread_id": "stream-test"}}
     parts = list(
         graph.stream(
             {"pdf_path": "referral.pdf"},
+            config=config,
             context=context,
             stream_mode=["updates", "values"],
             subgraphs=True,
@@ -158,8 +173,8 @@ def test_stream_reports_each_completed_node() -> None:
         for part in parts
         if part["type"] == "updates"
         for node_name in part["data"]
+        if node_name != "__interrupt__"
     ]
-    final_state = [part["data"] for part in parts if part["type"] == "values"][-1]
 
     assert completed_nodes == [
         "parse_pdf",
@@ -173,15 +188,44 @@ def test_stream_reports_each_completed_node() -> None:
         "load_references",
         "compile_requirements",
         "extract_requirement_values",
+    ]
+    request = next(
+        part["data"]["__interrupt__"][0].value
+        for part in parts
+        if part["type"] == "updates" and "__interrupt__" in part["data"]
+    )
+    assert request["options"] == ["approve", "reject"]
+
+    resumed_parts = list(
+        graph.stream(
+            Command(resume="approve"),
+            config=config,
+            stream_mode=["updates", "values"],
+            subgraphs=True,
+            version="v2",
+        )
+    )
+    resumed_nodes = [
+        node_name
+        for part in resumed_parts
+        if part["type"] == "updates"
+        for node_name in part["data"]
+    ]
+    final_state = [part["data"] for part in resumed_parts if part["type"] == "values"][
+        -1
+    ]
+
+    assert resumed_nodes == [
+        "review_referral_packet",
         "clinical_requirements",
     ]
-    assert final_state["outcome"] == "ready_for_next_stage"
+    assert final_state["outcome"] == "referral_approved"
 
 
 def test_valid_referral_reaches_next_stage() -> None:
     result = run_graph(extraction())
 
-    assert result["outcome"] == "ready_for_next_stage"
+    assert result["outcome"] == "referral_approved"
     assert result["patient"].last_name == "Turner"
     assert result["patient"].sex == "Male"
     assert result["insurance"].member_id == "SHP-88294317"
@@ -201,6 +245,7 @@ def test_valid_referral_reaches_next_stage() -> None:
     assert "meniscus.mechanical_symptoms" in requirement_ids
     assert "consult.question" in requirement_ids
     assert {finding.requirement_id for finding in clinical.findings} == requirement_ids
+    assert clinical.decision is ReferralDecision.APPROVE
     assert "selected_skill" not in result
     assert "skill_instructions" not in result
     assert "selected_references" not in result
@@ -258,6 +303,13 @@ def test_requirements_compile_deterministically_from_selected_content() -> None:
     assert len({requirement.id for requirement in requirements}) == len(requirements)
 
 
+def test_human_can_reject_referral() -> None:
+    result = run_graph(extraction(), decision="reject")
+
+    assert result["outcome"] == "referral_rejected"
+    assert result["clinical_requirements"].decision is ReferralDecision.REJECT
+
+
 def test_routing_mismatch_pauses_for_human_review() -> None:
     graph = build_graph(checkpointer=InMemorySaver())
     context = GraphContext(
@@ -291,7 +343,7 @@ def test_routing_mismatch_pauses_for_human_review() -> None:
 def test_provider_does_not_affect_routing() -> None:
     result = run_graph(extraction(provider=Provider(name="Unlisted Provider")))
 
-    assert result["outcome"] == "ready_for_next_stage"
+    assert result["outcome"] == "referral_approved"
     assert result["extracted"].provider.name == "Unlisted Provider"
 
 

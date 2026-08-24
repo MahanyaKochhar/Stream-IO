@@ -46,10 +46,19 @@ def main() -> None:
 
             print("\nHuman review required:")
             pprint(review_request)
-            review_text = ""
-            while not review_text:
-                review_text = input("Review text: ").strip()
-            graph_input = Command(resume=review_text)
+            if isinstance(review_request, dict) and "options" in review_request:
+                options = review_request["options"]
+                decision = ""
+                while decision not in options:
+                    decision = (
+                        input(f"Decision ({'/'.join(options)}): ").strip().lower()
+                    )
+                graph_input = Command(resume=decision)
+            else:
+                review_text = ""
+                while not review_text:
+                    review_text = input("Review text: ").strip()
+                graph_input = Command(resume=review_text)
 
     print("\nFinal graph state:")
     pprint(final_state)

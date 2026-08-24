@@ -8,6 +8,7 @@ from referral_intake.clinical_requirements.nodes import (
     extract_requirement_values,
     load_references,
     load_skill,
+    review_referral_packet,
     select_references,
     select_skill,
 )
@@ -25,5 +26,6 @@ def build_clinical_requirements_graph() -> CompiledStateGraph:
     builder.add_node("load_references", load_references)
     builder.add_node("compile_requirements", compile_requirements)
     builder.add_node("extract_requirement_values", extract_requirement_values)
+    builder.add_node("review_referral_packet", review_referral_packet)
     builder.add_edge(START, "select_skill")
     return builder.compile()

@@ -4,6 +4,7 @@ from referral_intake.clinical_requirements.models import (
     ClinicalSkillName,
     ReferenceSelection,
     RequirementDefinition,
+    RequirementFinding,
 )
 from referral_intake.state import ReferralState
 
@@ -16,3 +17,4 @@ class ClinicalRequirementsState(ReferralState):
     selected_references: ReferenceSelection
     reference_contents: dict[str, str]
     compiled_requirements: list[RequirementDefinition]
+    extracted_findings: list[RequirementFinding]

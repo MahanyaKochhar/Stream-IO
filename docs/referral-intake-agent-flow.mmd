@@ -17,6 +17,7 @@ flowchart TD
         LOAD_REFERENCES[Load selected references]
         COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
         EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
+        REVIEW_PACKET[Human review<br/>approve or reject packet]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
@@ -24,12 +25,14 @@ flowchart TD
         SELECT_REFERENCES --> LOAD_REFERENCES
         LOAD_REFERENCES --> COMPILE_REQUIREMENTS
         COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
+        EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     end
 
     HUMAN_REVIEW[Human review<br/>enter review text]
     REVIEWED([Human review complete])
     MISSING_INFO([Missing information])
-    NEXT_STAGE([Ready for next stage])
+    APPROVED([Referral approved])
+    REJECTED([Referral rejected])
 
     START --> PARSE
     PARSE --> EXTRACT
@@ -43,7 +46,8 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
-    EXTRACT_REQUIREMENTS --> NEXT_STAGE
+    REVIEW_PACKET -->|Approve| APPROVED
+    REVIEW_PACKET -->|Reject| REJECTED
 
     classDef input fill:#e8f1ff,stroke:#2563eb,color:#172554,stroke-width:2px;
     classDef process fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:2px;
@@ -55,7 +59,7 @@ flowchart TD
 
     class START,CR_START input;
     class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS,REVIEW_PACKET subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
-    class NEXT_STAGE success;
-    class MISSING_INFO,REVIEWED attention;
+    class APPROVED success;
+    class MISSING_INFO,REVIEWED,REJECTED attention;

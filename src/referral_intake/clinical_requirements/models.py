@@ -71,6 +71,13 @@ class RequirementExtraction(BaseModel):
     findings: list[RequirementFinding]
 
 
+class ReferralDecision(StrEnum):
+    """Human decision for the referral packet."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
 class ClinicalRequirementsResult(BaseModel):
     """Single clinical-requirements output returned to the parent graph."""
 
@@ -80,3 +87,4 @@ class ClinicalRequirementsResult(BaseModel):
     references: ReferenceSelection
     requirements: list[RequirementDefinition]
     findings: list[RequirementFinding]
+    decision: ReferralDecision

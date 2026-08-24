@@ -15,11 +15,11 @@ deterministic specialty/subspecialty lookup. A deterministic node loads its
 `SKILL.md`, a structured-output call selects supported condition and service
 reference IDs. Deterministic nodes load the selected files and compile their
 stable requirement definitions. A second structured-output call extracts one
-finding per requirement from the referral Markdown. The parent receives one
-top-level `clinical_requirements` result; loaded Markdown and other working
-state remain private to the subgraph. Post-extraction validation, plan
-generation, execution, treatment-plan, and scheduling behavior are not yet
-implemented.
+finding per requirement from the referral Markdown before the graph pauses for a
+human to approve or reject the packet. The parent receives one top-level
+`clinical_requirements` result; loaded Markdown and other working state remain
+private to the subgraph. Deterministic finding validation, plan generation,
+execution, treatment-plan, and scheduling behavior are not yet implemented.
 
 ## Setup
 
@@ -82,6 +82,7 @@ python main.py
 ```
 
 The entry point prints every completed node and the final graph state. A routing
-mismatch pauses at `human_review`, asks for non-empty reviewer text, and resumes
-with the same checkpoint thread. Both cloud API keys and `POSTGRES_URI` are
-required for a complete run.
+mismatch pauses at `human_review` for reviewer text. A clinically processed
+packet pauses at `review_referral_packet` for an `approve` or `reject` decision.
+Both resume with the same checkpoint thread. Both cloud API keys and
+`POSTGRES_URI` are required for a complete run.

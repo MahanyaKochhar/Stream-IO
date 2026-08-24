@@ -11,6 +11,8 @@ Outcome = Literal[
     "human_review_required",
     "human_reviewed",
     "ready_for_next_stage",
+    "referral_approved",
+    "referral_rejected",
 ]
 
 

@@ -1,15 +1,16 @@
 # Referral Intake Agent Flow
 
-Baseline version: `v1.0`
+Baseline version: `v1.2`
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
-Status: clinical subgraph compiles requirements and extracts their values
+Status: clinical findings require human approval or rejection
 
 The compiled `clinical_requirements` graph is one node in the parent referral
 graph after insurance validation. Its working fields remain private; the parent
 receives one typed `clinical_requirements` result containing the selected skill,
-logical references, compiled requirements, and extracted findings.
+logical references, compiled requirements, extracted findings, and the human
+decision.
 
 ```mermaid
 flowchart TD
@@ -31,6 +32,7 @@ flowchart TD
         LOAD_REFERENCES[Load selected references]
         COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
         EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
+        REVIEW_PACKET[Human review<br/>approve or reject packet]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
@@ -38,12 +40,14 @@ flowchart TD
         SELECT_REFERENCES --> LOAD_REFERENCES
         LOAD_REFERENCES --> COMPILE_REQUIREMENTS
         COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
+        EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     end
 
     HUMAN_REVIEW[Human review<br/>enter review text]
     REVIEWED([Human review complete])
     MISSING_INFO([Missing information])
-    NEXT_STAGE([Ready for next stage])
+    APPROVED([Referral approved])
+    REJECTED([Referral rejected])
 
     START --> PARSE
     PARSE --> EXTRACT
@@ -57,7 +61,8 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
-    EXTRACT_REQUIREMENTS --> NEXT_STAGE
+    REVIEW_PACKET -->|Approve| APPROVED
+    REVIEW_PACKET -->|Reject| REJECTED
 
     classDef input fill:#e8f1ff,stroke:#2563eb,color:#172554,stroke-width:2px;
     classDef process fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:2px;
@@ -69,10 +74,10 @@ flowchart TD
 
     class START,CR_START input;
     class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS,REVIEW_PACKET subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
-    class NEXT_STAGE success;
-    class MISSING_INFO,REVIEWED attention;
+    class APPROVED success;
+    class MISSING_INFO,REVIEWED,REJECTED attention;
 ```
 
 ## Current executable node contract
@@ -85,7 +90,7 @@ flowchart TD
 | `human_review` | Pause with `interrupt()` and store non-empty reviewer text on resume | `Command(goto=END)` |
 | `validate_patient` | Validate required patient fields and promote `state.patient` | Command to insurance validation or missing information |
 | `validate_insurance` | Validate required insurance fields and promote `state.insurance` | Command to `clinical_requirements` or missing information |
-| `clinical_requirements` | Run the compiled shared-state skill-selection subgraph | Ready for next stage |
+| `clinical_requirements` | Run the compiled clinical subgraph through requirement extraction and human review | Referral approved or rejected |
 | `missing_information` | Finalize the missing-field message | `Command(goto=END)` |
 
 ## Clinical requirements subagent
@@ -100,7 +105,8 @@ node. Internally, its initial linear flow is:
 | `select_references` | Read `SKILL.md` and return one supported condition ID and one supported service ID | `Command(goto="load_references")` |
 | `load_references` | Deterministically load both selected files, keyed by logical reference ID | `Command(goto="compile_requirements")` |
 | `compile_requirements` | Deterministically merge the requirement definitions in `SKILL.md` and the selected references | `Command(goto="extract_requirement_values")` |
-| `extract_requirement_values` | Use structured LLM output to extract one finding per compiled requirement from referral Markdown | `Command(goto=END)` |
+| `extract_requirement_values` | Use structured LLM output to extract one finding per compiled requirement from referral Markdown | `Command(goto="review_referral_packet")` |
+| `review_referral_packet` | Pause with `interrupt()` until a human enters `approve` or `reject`; construct the final clinical result | `Command(goto=END)` |
 
 The initial catalog contains only `orthopedics/knee`. Each Markdown file keeps
 human-readable instructions and a YAML requirement-definition block with stable
@@ -159,10 +165,11 @@ ReferralState
 │   │   ├── description
 │   │   ├── required
 │   │   └── source                   # logical ID, never a file path
-│   └── findings: list[RequirementFinding]
+│   ├── findings: list[RequirementFinding]
 │       ├── requirement_id
 │       ├── status                   # documented or not_documented
 │       └── value
+│   └── decision                     # approve or reject
 ├── missing_fields
 ├── outcome
 ├── message
@@ -177,6 +184,7 @@ ClinicalRequirementsState extends ReferralState
 ├── selected_references
 ├── reference_contents
 ├── compiled_requirements
+├── extracted_findings
 └── inherited clinical_requirements   # shared parent output
 ```
 
@@ -194,8 +202,8 @@ human-review results; routine processing transitions are represented by
 
 The requirement extraction LLM receives only the compiled definitions and full
 referral Markdown. It returns structured findings and is instructed to avoid
-inference. Per the current scope, no deterministic post-extraction validation
-node is present yet.
+inference. A human sees those findings, then explicitly approves or rejects the
+packet. Deterministic finding validation is deferred for now.
 
 Service clients and routing configuration are passed through LangGraph runtime
 context and are not part of referral state. PostgreSQL checkpoints persist each
@@ -203,7 +211,8 @@ run under the configured `thread_id` so an interrupt can resume safely.
 
 ## Deferred work
 
-- Add deterministic validation for exact requirement coverage and IDs.
+- Define downstream handling for approved and rejected referrals.
+- Add deterministic validation of generated findings when its policy is defined.
 - Add shoulder and spine skill directories when their content is ready.
 - Add `generate_plan` and `execute_plan` nodes after the skill format is stable.
 - Define plan state, execution outputs, and failure paths.

@@ -4,7 +4,7 @@ from typing import Literal
 
 from langgraph.graph import END
 from langgraph.runtime import Runtime
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 
 from referral_intake.clinical_requirements.catalog import (
     compile_requirements as compile_skill_requirements,
@@ -18,7 +18,10 @@ from referral_intake.clinical_requirements.catalog import (
 from referral_intake.clinical_requirements.catalog import (
     select_skill as select_skill_from_catalog,
 )
-from referral_intake.clinical_requirements.models import ClinicalRequirementsResult
+from referral_intake.clinical_requirements.models import (
+    ClinicalRequirementsResult,
+    ReferralDecision,
+)
 from referral_intake.clinical_requirements.state import ClinicalRequirementsState
 from referral_intake.runtime import GraphContext
 
@@ -102,7 +105,7 @@ def compile_requirements(
 def extract_requirement_values(
     state: ClinicalRequirementsState,
     runtime: Runtime[GraphContext],
-) -> Command[Literal[END]]:
+) -> Command[Literal["review_referral_packet"]]:
     """Extract values for compiled requirements from referral Markdown."""
 
     extraction = runtime.context.requirement_extractor.extract(
@@ -110,14 +113,47 @@ def extract_requirement_values(
         requirements=state["compiled_requirements"],
     )
     return Command(
+        update={"extracted_findings": extraction.findings},
+        goto="review_referral_packet",
+    )
+
+
+def review_referral_packet(
+    state: ClinicalRequirementsState,
+) -> Command[Literal[END]]:
+    """Pause for a human to approve or reject the referral packet."""
+
+    response = interrupt(
+        {
+            "instruction": "Review the clinical findings and approve or reject "
+            "the referral packet.",
+            "options": [decision.value for decision in ReferralDecision],
+            "findings": [
+                finding.model_dump(mode="json")
+                for finding in state["extracted_findings"]
+            ],
+        }
+    )
+    try:
+        decision = ReferralDecision(str(response).strip().casefold())
+    except ValueError as error:
+        raise ValueError("Human decision must be 'approve' or 'reject'.") from error
+
+    outcome = (
+        "referral_approved"
+        if decision is ReferralDecision.APPROVE
+        else "referral_rejected"
+    )
+    return Command(
         update={
             "clinical_requirements": ClinicalRequirementsResult(
                 skill=state["selected_skill"],
                 references=state["selected_references"],
                 requirements=state["compiled_requirements"],
-                findings=extraction.findings,
+                findings=state["extracted_findings"],
+                decision=decision,
             ),
-            "outcome": "ready_for_next_stage",
+            "outcome": outcome,
         },
         goto=END,
     )

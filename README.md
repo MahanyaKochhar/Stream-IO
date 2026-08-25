@@ -29,60 +29,75 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-Add your LlamaCloud, Gemini, and PostgreSQL settings to `.env`:
+Add your LlamaCloud and Gemini settings to `.env`:
 
 ```dotenv
 LLAMA_CLOUD_API_KEY=
 GEMINI_API_KEY=
 LLM_PROVIDER=google_genai
 LLM_MODEL=gemini-3.7-flash
-POSTGRES_URI=postgresql://user:password@localhost:5432/referrals
 ```
 
 The LLM adapters pass `GEMINI_API_KEY` to the configured provider, use LangChain
 structured output, and validate the response as a Pydantic `ReferralExtraction`
-before it enters graph state. The runner calls
-`PostgresSaver.setup()` to create or migrate LangGraph's checkpoint tables.
+before it enters graph state.
 
-## Graph execution
+## LangGraph Agent Server
 
-```python
-from referral_intake.graph import build_graph
-from referral_intake.persistence import postgres_checkpointer
-from referral_intake.runtime import GraphContext
+The repository exposes the graph as `referral_intake` through
+`langgraph.json`. Start the development server with:
 
-config = {"configurable": {"thread_id": "referral-123"}}
-with postgres_checkpointer() as checkpointer:
-    graph = build_graph(checkpointer=checkpointer)
-    for part in graph.stream(
-        {"pdf_path": "referral.pdf"},
-        config=config,
-        context=GraphContext(),
-        stream_mode="updates",
-        subgraphs=True,
-        version="v2",
-    ):
-        print(part["data"])
+```bash
+python -m pip install -e '.[dev]'
+langgraph dev --no-browser
 ```
 
-Use `invoke()` when only the final state is needed. Use `stream()` with
-`stream_mode="updates"` and `subgraphs=True` to observe both parent and subgraph
-node updates. The `main.py` runner retains the latest `values` event so it can
-print the final state without executing the graph a second time.
+The API is available at `http://localhost:2024`. Agent Server manages streaming,
+threads, checkpoints, and interrupt resumption; no custom FastAPI or SSE layer is
+needed. Local `langgraph dev` uses its development persistence. The explicit
+checkpoint lifecycle is owned by Agent Server.
+
+The exported graph creates one `GraphDependencies` container and binds it to
+the node functions when the server imports the graph. Parsers, model adapters,
+and routing policy therefore stay outside checkpointed referral state without
+requiring a JSON runtime context.
+
+A future React frontend can connect directly with `@langchain/react`:
+
+```tsx
+import { useStream } from "@langchain/react";
+
+type ReferralState = {
+  pdf_path: string;
+  outcome?: string;
+  clinical_requirements?: unknown;
+};
+
+const stream = useStream<ReferralState>({
+  apiUrl: "http://localhost:2024",
+  assistantId: "referral_intake",
+});
+
+await stream.submit({ pdf_path: "referral_packet.pdf" });
+await stream.respond("approve");
+```
+
+`pdf_path` currently refers to a file already available to the server. Browser
+file upload or object-storage ingestion will be added separately when the
+frontend is implemented.
 
 See [the workflow baseline](docs/referral-intake-agent-flow.md) for the node
 diagram and [the tests](tests/test_graph.py) for complete in-memory examples.
 
 ## Run the graph
 
-Set `PDF_PATH` in `main.py`, then run the real graph:
+Start the LangGraph development server:
 
 ```bash
-python main.py
+langgraph dev --no-browser
 ```
 
-The entry point prints every completed node and the final graph state. A routing
-mismatch pauses at `human_review` for reviewer text. A clinically processed
-packet pauses at `review_referral_packet` for an `approve` or `reject` decision.
-Both resume with the same checkpoint thread. Both cloud API keys and
-`POSTGRES_URI` are required for a complete run.
+Use LangGraph Studio or a `useStream` frontend to submit a referral and observe
+node updates. A routing mismatch pauses at `human_review` for reviewer text. A
+clinically processed packet pauses at `review_referral_packet` for an `approve`
+or `reject` decision. Agent Server resumes both through the same thread.

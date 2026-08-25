@@ -1,4 +1,4 @@
-"""Runtime dependencies used by graph nodes."""
+"""External services and policy used by the referral graph."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,11 +60,8 @@ class LlamaParsePdfParser:
         if not pdf_path.is_file():
             raise FileNotFoundError(f"Referral PDF not found: {pdf_path}")
 
-        # Imported lazily so pure graph tests do not initialize a cloud client.
-        from dotenv import load_dotenv
         from llama_cloud import LlamaCloud
 
-        load_dotenv()
         with LlamaCloud() as client:
             uploaded = client.files.create(file=pdf_path, purpose="parse")
             result = client.parsing.parse(
@@ -92,8 +89,8 @@ class RoutingPolicy:
 
 
 @dataclass(frozen=True)
-class GraphContext:
-    """Dependencies and policy supplied when invoking the graph."""
+class GraphDependencies:
+    """Services and policy shared by every node in one compiled graph."""
 
     parser: PdfParser = field(default_factory=LlamaParsePdfParser)
     extractor: ReferralExtractor = field(default_factory=StructuredReferralExtractor)

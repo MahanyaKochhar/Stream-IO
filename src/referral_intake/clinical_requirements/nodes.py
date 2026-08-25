@@ -3,7 +3,6 @@
 from typing import Literal
 
 from langgraph.graph import END
-from langgraph.runtime import Runtime
 from langgraph.types import Command, interrupt
 
 from referral_intake.clinical_requirements.catalog import (
@@ -23,7 +22,7 @@ from referral_intake.clinical_requirements.models import (
     ReferralDecision,
 )
 from referral_intake.clinical_requirements.state import ClinicalRequirementsState
-from referral_intake.runtime import GraphContext
+from referral_intake.dependencies import GraphDependencies
 
 
 def select_skill(
@@ -57,12 +56,13 @@ def load_skill(
 
 
 def select_references(
-    state: ClinicalRequirementsState, runtime: Runtime[GraphContext]
+    state: ClinicalRequirementsState,
+    dependencies: GraphDependencies,
 ) -> Command[Literal["load_references"]]:
     """Select supported condition and service reference IDs."""
 
     extracted = state["extracted"]
-    selection = runtime.context.reference_selector.select(
+    selection = dependencies.reference_selector.select(
         skill_instructions=state["skill_instructions"],
         condition=extracted.condition,
         service=extracted.service,
@@ -104,11 +104,11 @@ def compile_requirements(
 
 def extract_requirement_values(
     state: ClinicalRequirementsState,
-    runtime: Runtime[GraphContext],
+    dependencies: GraphDependencies,
 ) -> Command[Literal["review_referral_packet"]]:
     """Extract values for compiled requirements from referral Markdown."""
 
-    extraction = runtime.context.requirement_extractor.extract(
+    extraction = dependencies.requirement_extractor.extract(
         markdown=state["markdown"],
         requirements=state["compiled_requirements"],
     )

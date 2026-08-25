@@ -22,6 +22,7 @@ from referral_intake.clinical_requirements.models import (
     RequirementStatus,
     ServiceReference,
 )
+from referral_intake.dependencies import GraphDependencies
 from referral_intake.extraction import referral_output_schema, validate_extraction
 from referral_intake.graph import build_graph
 from referral_intake.llm import (
@@ -36,7 +37,7 @@ from referral_intake.models import (
     ReferralExtraction,
     ReferralType,
 )
-from referral_intake.runtime import GraphContext
+from referral_intake.server import graph as server_graph
 
 
 class StubParser:
@@ -129,18 +130,20 @@ def run_graph(
     result: ReferralExtraction,
     decision: str = "approve",
 ) -> dict[str, object]:
-    graph = build_graph(checkpointer=InMemorySaver())
-    context = GraphContext(
+    dependencies = GraphDependencies(
         parser=StubParser(),
         extractor=StubExtractor(result),
         reference_selector=StubReferenceSelector(),
         requirement_extractor=StubRequirementExtractor(),
     )
+    graph = build_graph(
+        checkpointer=InMemorySaver(),
+        dependencies=dependencies,
+    )
     config = {"configurable": {"thread_id": "clinical-review-test"}}
     paused = graph.invoke(
         {"pdf_path": "referral.pdf"},
         config=config,
-        context=context,
     )
     if "__interrupt__" not in paused:
         return paused
@@ -149,12 +152,15 @@ def run_graph(
 
 
 def test_stream_reports_each_completed_node() -> None:
-    graph = build_graph(checkpointer=InMemorySaver())
-    context = GraphContext(
+    dependencies = GraphDependencies(
         parser=StubParser(),
         extractor=StubExtractor(extraction()),
         reference_selector=StubReferenceSelector(),
         requirement_extractor=StubRequirementExtractor(),
+    )
+    graph = build_graph(
+        checkpointer=InMemorySaver(),
+        dependencies=dependencies,
     )
 
     config = {"configurable": {"thread_id": "stream-test"}}
@@ -162,7 +168,6 @@ def test_stream_reports_each_completed_node() -> None:
         graph.stream(
             {"pdf_path": "referral.pdf"},
             config=config,
-            context=context,
             stream_mode=["updates", "values"],
             subgraphs=True,
             version="v2",
@@ -219,7 +224,28 @@ def test_stream_reports_each_completed_node() -> None:
         "review_referral_packet",
         "clinical_requirements",
     ]
+    parent_update = next(
+        part["data"]["clinical_requirements"]
+        for part in resumed_parts
+        if part["type"] == "updates" and "clinical_requirements" in part["data"]
+    )
+    assert set(parent_update) == {"clinical_requirements", "outcome"}
     assert final_state["outcome"] == "referral_approved"
+
+
+def test_server_graph_exposes_minimal_public_schema() -> None:
+    assert server_graph.get_input_jsonschema()["required"] == ["pdf_path"]
+    assert server_graph.get_context_jsonschema() is None
+
+
+def test_server_graph_exposes_command_routes() -> None:
+    graph = server_graph.get_graph()
+    routes = {(edge.source, edge.target) for edge in graph.edges}
+
+    assert ("parse_pdf", "extract_fields") in routes
+    assert ("extract_fields", "check_routing") in routes
+    assert ("check_routing", "validate_patient") in routes
+    assert ("check_routing", "human_review") in routes
 
 
 def test_valid_referral_reaches_next_stage() -> None:
@@ -311,17 +337,19 @@ def test_human_can_reject_referral() -> None:
 
 
 def test_routing_mismatch_pauses_for_human_review() -> None:
-    graph = build_graph(checkpointer=InMemorySaver())
-    context = GraphContext(
+    dependencies = GraphDependencies(
         parser=StubParser(),
         extractor=StubExtractor(extraction(subspecialty="Spine")),
+    )
+    graph = build_graph(
+        checkpointer=InMemorySaver(),
+        dependencies=dependencies,
     )
     config = {"configurable": {"thread_id": "review-test"}}
 
     paused = graph.invoke(
         {"pdf_path": "referral.pdf"},
         config=config,
-        context=context,
     )
     request = paused["__interrupt__"][0].value
 
@@ -420,11 +448,13 @@ def test_referral_type_rejects_unsupported_values() -> None:
         extraction(referral_type="sports medicine")
 
 
-def test_graph_context_uses_structured_llm_adapters_by_default() -> None:
-    assert isinstance(GraphContext().extractor, StructuredReferralExtractor)
-    assert isinstance(GraphContext().reference_selector, StructuredReferenceSelector)
+def test_graph_dependencies_use_structured_llm_adapters_by_default() -> None:
+    dependencies = GraphDependencies()
+
+    assert isinstance(dependencies.extractor, StructuredReferralExtractor)
+    assert isinstance(dependencies.reference_selector, StructuredReferenceSelector)
     assert isinstance(
-        GraphContext().requirement_extractor, StructuredRequirementExtractor
+        dependencies.requirement_extractor, StructuredRequirementExtractor
     )
 
 

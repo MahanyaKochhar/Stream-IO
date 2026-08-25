@@ -1,0 +1,8 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "referral_intake": "./src/referral_intake/server.py:graph"
+  },
+  "env": ".env"
+}

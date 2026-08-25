@@ -4,21 +4,21 @@ from pathlib import Path
 from typing import Literal
 
 from langgraph.graph import END
-from langgraph.runtime import Runtime
 from langgraph.types import Command, interrupt
 from pydantic import ValidationError
 
+from referral_intake.dependencies import GraphDependencies
 from referral_intake.models import Insurance, Patient
-from referral_intake.runtime import GraphContext
 from referral_intake.state import ReferralState
 
 
 def parse_pdf(
-    state: ReferralState, runtime: Runtime[GraphContext]
+    state: ReferralState,
+    dependencies: GraphDependencies,
 ) -> Command[Literal["extract_fields"]]:
     """Parse the referral PDF into Markdown using LlamaParse."""
 
-    markdown = runtime.context.parser.parse(Path(state["pdf_path"]))
+    markdown = dependencies.parser.parse(Path(state["pdf_path"]))
     if not markdown.strip():
         raise ValueError("The referral PDF produced empty Markdown.")
     return Command(
@@ -28,11 +28,12 @@ def parse_pdf(
 
 
 def extract_fields(
-    state: ReferralState, runtime: Runtime[GraphContext]
+    state: ReferralState,
+    dependencies: GraphDependencies,
 ) -> Command[Literal["check_routing"]]:
     """Extract the small nested referral schema from parsed Markdown."""
 
-    extracted = runtime.context.extractor.extract(state["markdown"])
+    extracted = dependencies.extractor.extract(state["markdown"])
     return Command(
         update={"extracted": extracted},
         goto="check_routing",
@@ -40,12 +41,13 @@ def extract_fields(
 
 
 def check_routing(
-    state: ReferralState, runtime: Runtime[GraphContext]
+    state: ReferralState,
+    dependencies: GraphDependencies,
 ) -> Command[Literal["validate_patient", "human_review"]]:
     """Apply the initial in-code specialty and subspecialty check."""
 
     extracted = state["extracted"]
-    policy = runtime.context.routing_policy
+    policy = dependencies.routing_policy
     values = {
         "specialty": extracted.specialty,
         "subspecialty": extracted.subspecialty,

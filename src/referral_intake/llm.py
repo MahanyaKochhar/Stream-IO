@@ -22,15 +22,12 @@ def _structured_model(schema: type[BaseModel]):
     load_dotenv()
     provider_name = _required_setting("LLM_PROVIDER")
     model_name = _required_setting("LLM_MODEL")
-    model_options: dict[str, object] = {}
-    if provider_name == "google_genai":
-        model_options["api_key"] = _required_setting("GEMINI_API_KEY")
 
     llm = init_chat_model(
         model=model_name,
         model_provider=provider_name,
+        api_key=_required_setting("OPENAI_API_KEY"),
         max_retries=2,
-        **model_options,
     )
     return llm.with_structured_output(schema, method="json_schema")
 

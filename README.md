@@ -29,16 +29,16 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-Add your LlamaCloud and Gemini settings to `.env`:
+Add your LlamaCloud and OpenAI settings to `.env`:
 
 ```dotenv
 LLAMA_CLOUD_API_KEY=
-GEMINI_API_KEY=
-LLM_PROVIDER=google_genai
-LLM_MODEL=gemini-3.7-flash
+OPENAI_API_KEY=
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-5-mini
 ```
 
-The LLM adapters pass `GEMINI_API_KEY` to the configured provider, use LangChain
+The LLM adapters pass `OPENAI_API_KEY` to the configured provider, use LangChain
 structured output, and validate the response as a Pydantic `ReferralExtraction`
 before it enters graph state.
 
@@ -62,7 +62,7 @@ the node functions when the server imports the graph. Parsers, model adapters,
 and routing policy therefore stay outside checkpointed referral state without
 requiring a JSON runtime context.
 
-A future React frontend can connect directly with `@langchain/react`:
+The React frontend in `frontend/` connects directly with `@langchain/react`:
 
 ```tsx
 import { useStream } from "@langchain/react";
@@ -82,9 +82,27 @@ await stream.submit({ pdf_path: "referral_packet.pdf" });
 await stream.respond("approve");
 ```
 
-`pdf_path` currently refers to a file already available to the server. Browser
-file upload or object-storage ingestion will be added separately when the
-frontend is implemented.
+For local development, the frontend upload route stores the PDF in the system
+temporary directory and submits that server-readable path to the graph. Replace
+this handoff with private object storage before deploying the two services on
+separate hosts.
+
+## Frontend
+
+Start Agent Server first, then run the Next.js workspace in another terminal:
+
+```bash
+langgraph dev --no-browser
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. The dashboard reads persisted Agent Server
+threads, groups running and completed referrals, opens individual referral
+details, and starts new graph runs from its AI Elements upload chat. Human
+review resumes the same thread through `useStream.respond()`.
 
 See [the workflow baseline](docs/referral-intake-agent-flow.md) for the node
 diagram and [the tests](tests/test_graph.py) for complete in-memory examples.
@@ -100,4 +118,5 @@ langgraph dev --no-browser
 Use LangGraph Studio or a `useStream` frontend to submit a referral and observe
 node updates. A routing mismatch pauses at `human_review` for reviewer text. A
 clinically processed packet pauses at `review_referral_packet` for an `approve`
-or `reject` decision. Agent Server resumes both through the same thread.
+or `reject` decision. Enter the decision as plain text. Agent Server resumes both
+through the same thread.

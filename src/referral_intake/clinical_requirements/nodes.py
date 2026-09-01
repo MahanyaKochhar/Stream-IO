@@ -123,21 +123,21 @@ def review_referral_packet(
 ) -> Command[Literal[END]]:
     """Pause for a human to approve or reject the referral packet."""
 
-    response = interrupt(
-        {
-            "instruction": "Review the clinical findings and approve or reject "
-            "the referral packet.",
-            "options": [decision.value for decision in ReferralDecision],
-            "findings": [
-                finding.model_dump(mode="json")
-                for finding in state["extracted_findings"]
-            ],
-        }
-    )
-    try:
-        decision = ReferralDecision(str(response).strip().casefold())
-    except ValueError as error:
-        raise ValueError("Human decision must be 'approve' or 'reject'.") from error
+    review_request = {
+        "instruction": "Review the clinical findings and approve or reject "
+        "the referral packet.",
+        "options": [decision.value for decision in ReferralDecision],
+        "findings": [
+            finding.model_dump(mode="json")
+            for finding in state["extracted_findings"]
+        ],
+        "requirements": [
+            requirement.model_dump(mode="json")
+            for requirement in state["compiled_requirements"]
+        ],
+    }
+    response = interrupt(review_request)
+    decision = ReferralDecision(str(response).strip().casefold())
 
     outcome = (
         "referral_approved"

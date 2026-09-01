@@ -106,7 +106,7 @@ node. Internally, its initial linear flow is:
 | `load_references` | Deterministically load both selected files, keyed by logical reference ID | `Command(goto="compile_requirements")` |
 | `compile_requirements` | Deterministically merge the requirement definitions in `SKILL.md` and the selected references | `Command(goto="extract_requirement_values")` |
 | `extract_requirement_values` | Use structured LLM output to extract one finding per compiled requirement from referral Markdown | `Command(goto="review_referral_packet")` |
-| `review_referral_packet` | Pause with `interrupt()` until a human enters `approve` or `reject`; construct the final clinical result | `Command(goto=END)` |
+| `review_referral_packet` | Pause once with `interrupt()` for a human to enter `approve` or `reject`; construct the final clinical result | `Command(goto=END)` |
 
 The initial catalog contains only `orthopedics/knee`. Each Markdown file keeps
 human-readable instructions and a YAML requirement-definition block with stable

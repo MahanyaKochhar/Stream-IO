@@ -147,8 +147,13 @@ def run_graph(
     )
     if "__interrupt__" not in paused:
         return paused
-    assert paused["__interrupt__"][0].value["options"] == ["approve", "reject"]
-    return graph.invoke(Command(resume=decision), config=config)
+    review_interrupt = paused["__interrupt__"][0]
+    assert review_interrupt.value["options"] == ["approve", "reject"]
+    assert review_interrupt.value["requirements"]
+    return graph.invoke(
+        Command(resume={review_interrupt.id: decision}),
+        config=config,
+    )
 
 
 def test_stream_reports_each_completed_node() -> None:
@@ -481,15 +486,15 @@ def test_referral_extractor_uses_initialized_structured_model(
     def stub_init_chat_model(
         model: str, model_provider: str, max_retries: int, api_key: str
     ) -> StubChatModel:
-        assert model == "gemini-3.7-flash"
-        assert model_provider == "google_genai"
+        assert model == "gpt-5-mini"
+        assert model_provider == "openai"
         assert max_retries == 2
         assert api_key == "test-key"
         return StubChatModel()
 
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("LLM_PROVIDER", "google_genai")
-    monkeypatch.setenv("LLM_MODEL", "gemini-3.7-flash")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-5-mini")
     monkeypatch.setattr(
         "referral_intake.llm.init_chat_model",
         stub_init_chat_model,
@@ -531,15 +536,15 @@ def test_reference_selector_reads_skill_and_returns_logical_ids(
     def stub_init_chat_model(
         model: str, model_provider: str, max_retries: int, api_key: str
     ) -> StubChatModel:
-        assert model == "gemini-3.7-flash"
-        assert model_provider == "google_genai"
+        assert model == "gpt-5-mini"
+        assert model_provider == "openai"
         assert max_retries == 2
         assert api_key == "test-key"
         return StubChatModel()
 
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("LLM_PROVIDER", "google_genai")
-    monkeypatch.setenv("LLM_MODEL", "gemini-3.7-flash")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-5-mini")
     monkeypatch.setattr(
         "referral_intake.llm.init_chat_model",
         stub_init_chat_model,
@@ -598,7 +603,9 @@ def test_requirement_extractor_uses_compiled_definitions(
     ) -> StubChatModel:
         return StubChatModel()
 
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gpt-5-mini")
     monkeypatch.setattr(
         "referral_intake.llm.init_chat_model",
         stub_init_chat_model,

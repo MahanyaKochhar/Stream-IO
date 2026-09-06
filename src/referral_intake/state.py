@@ -1,11 +1,13 @@
 """LangGraph state definitions."""
 
-from typing import Literal, NotRequired
+from typing import Annotated, Literal, NotRequired
 
+from langgraph.graph.ui import AnyUIMessage, ui_message_reducer
 from typing_extensions import TypedDict
 
 from referral_intake.clinical_requirements.models import ClinicalRequirementsResult
 from referral_intake.models import Insurance, Patient, ReferralExtraction
+from referral_intake.workflow import WorkflowChannel
 
 Outcome = Literal[
     "processing",
@@ -22,16 +24,24 @@ class ReferralInput(TypedDict):
     """Public graph input accepted by Agent Server."""
 
     pdf_path: str
+    pdf_name: NotRequired[str]
 
 
-class ClinicalRequirementsInput(TypedDict):
+class WorkflowState(TypedDict):
+    """Coordinator-facing progress shared across parent and subgraph state."""
+
+    workflow: WorkflowChannel
+    ui: Annotated[list[AnyUIMessage], ui_message_reducer]
+
+
+class ClinicalRequirementsInput(WorkflowState):
     """Parent channels read by the clinical subgraph."""
 
     markdown: str
     extracted: ReferralExtraction
 
 
-class ClinicalRequirementsOutput(TypedDict):
+class ClinicalRequirementsOutput(WorkflowState):
     """Clinical subgraph channels returned to the parent."""
 
     clinical_requirements: ClinicalRequirementsResult

@@ -15,9 +15,9 @@ deterministic specialty/subspecialty lookup. A deterministic node loads its
 `SKILL.md`, a structured-output call selects supported condition and service
 reference IDs. Deterministic nodes load the selected files and compile their
 stable requirement definitions. A second structured-output call extracts one
-finding per requirement from the referral Markdown before the graph pauses for a
-human to approve or reject the packet. The parent receives one top-level
-`clinical_requirements` result; loaded Markdown and other working state remain
+finding per requirement from the referral Markdown. The subgraph returns its
+draft, then the parent graph pauses so a coordinator can edit findings and
+approve or reject the packet. Loaded Markdown and other working state remain
 private to the subgraph. Deterministic finding validation, plan generation,
 execution, treatment-plan, and scheduling behavior are not yet implemented.
 
@@ -29,18 +29,18 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-Add your LlamaCloud and OpenAI settings to `.env`:
+Add your LlamaCloud and UF Navigator settings to `.env`:
 
 ```dotenv
 LLAMA_CLOUD_API_KEY=
-OPENAI_API_KEY=
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-5-mini
+NAVIGATOR_API_KEY=
+NAVIGATOR_MODEL=
 ```
 
-The LLM adapters pass `OPENAI_API_KEY` to the configured provider, use LangChain
-structured output, and validate the response as a Pydantic `ReferralExtraction`
-before it enters graph state.
+The active LLM adapters use UF Navigator's OpenAI-compatible endpoint with
+LangChain structured output and validate the response as a Pydantic
+`ReferralExtraction` before it enters graph state. The provider-neutral
+`llm.py` adapter remains available but is not currently wired into the graph.
 
 ## LangGraph Agent Server
 
@@ -69,6 +69,7 @@ import { useStream } from "@langchain/react";
 
 type ReferralState = {
   pdf_path: string;
+  ui?: UIMessage[];
   outcome?: string;
   clinical_requirements?: unknown;
 };
@@ -79,8 +80,13 @@ const stream = useStream<ReferralState>({
 });
 
 await stream.submit({ pdf_path: "referral_packet.pdf" });
-await stream.respond("approve");
+await stream.respond({ decision: "approve", findings: editedFindings });
 ```
+
+Nodes emit trusted LangGraph UI messages into `stream.values.ui`. A frontend
+component registry maps each message name to an AI Elements component, including
+editable clinical findings and the terminal assistant response. No private model
+reasoning is exposed.
 
 For local development, the frontend upload route stores the PDF in the system
 temporary directory and submits that server-readable path to the graph. Replace
@@ -117,6 +123,6 @@ langgraph dev --no-browser
 
 Use LangGraph Studio or a `useStream` frontend to submit a referral and observe
 node updates. A routing mismatch pauses at `human_review` for reviewer text. A
-clinically processed packet pauses at `review_referral_packet` for an `approve`
-or `reject` decision. Enter the decision as plain text. Agent Server resumes both
-through the same thread.
+clinically processed packet pauses at the parent `review_referral_packet` node.
+Its structured response contains the edited findings and the `approve` or
+`reject` decision. Agent Server resumes both through the same thread.

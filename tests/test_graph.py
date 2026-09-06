@@ -30,6 +30,15 @@ from referral_intake.llm import (
     StructuredReferralExtractor,
     StructuredRequirementExtractor,
 )
+from referral_intake.llm_navigator import (
+    StructuredReferenceSelector as NavigatorReferenceSelector,
+)
+from referral_intake.llm_navigator import (
+    StructuredReferralExtractor as NavigatorReferralExtractor,
+)
+from referral_intake.llm_navigator import (
+    StructuredRequirementExtractor as NavigatorRequirementExtractor,
+)
 from referral_intake.models import (
     ExtractedInsurance,
     ExtractedPatient,
@@ -129,6 +138,7 @@ def extraction(**overrides: object) -> ReferralExtraction:
 def run_graph(
     result: ReferralExtraction,
     decision: str = "approve",
+    edited_value: str | None = None,
 ) -> dict[str, object]:
     dependencies = GraphDependencies(
         parser=StubParser(),
@@ -148,10 +158,27 @@ def run_graph(
     if "__interrupt__" not in paused:
         return paused
     review_interrupt = paused["__interrupt__"][0]
-    assert review_interrupt.value["options"] == ["approve", "reject"]
-    assert review_interrupt.value["requirements"]
+    assert review_interrupt.value == {"type": "clinical_review"}
+    review_ui = next(
+        message for message in paused["ui"] if message["name"] == "clinical_review"
+    )
+    findings = review_ui["props"]["findings"]
+    if edited_value is not None:
+        findings[0] = {
+            **findings[0],
+            "status": "documented",
+            "value": edited_value,
+        }
     return graph.invoke(
-        Command(resume={review_interrupt.id: decision}),
+        Command(
+            resume={
+                review_interrupt.id: {
+                    "decision": decision,
+                    "findings": findings,
+                    "reviewed_by": "Test Coordinator",
+                }
+            }
+        ),
         config=config,
     )
 
@@ -187,6 +214,7 @@ def test_stream_reports_each_completed_node() -> None:
     ]
 
     assert completed_nodes == [
+        "start_intake",
         "parse_pdf",
         "extract_fields",
         "check_routing",
@@ -198,17 +226,49 @@ def test_stream_reports_each_completed_node() -> None:
         "load_references",
         "compile_requirements",
         "extract_requirement_values",
+        "clinical_requirements",
     ]
     request = next(
         part["data"]["__interrupt__"][0].value
         for part in parts
         if part["type"] == "updates" and "__interrupt__" in part["data"]
     )
-    assert request["options"] == ["approve", "reject"]
+    workflows = [
+        part["data"]["workflow"]
+        for part in parts
+        if part["type"] == "values" and "workflow" in part["data"]
+    ]
+    assert any(
+        workflow["referral_packet"]["status"] == "active"
+        for workflow in workflows
+        if "referral_packet" in workflow
+    )
+    assert any(
+        workflow["intake_details"]["status"] == "complete"
+        for workflow in workflows
+        if "intake_details" in workflow
+    )
+    assert request == {"type": "clinical_review"}
+    paused_state = [
+        part["data"] for part in parts if part["type"] == "values"
+    ][-1]
+    review_ui = next(
+        message
+        for message in paused_state["ui"]
+        if message["name"] == "clinical_review"
+    )
+    assert review_ui["props"]["editable"] is True
+    assert review_ui["props"]["findings"]
 
     resumed_parts = list(
         graph.stream(
-            Command(resume="approve"),
+            Command(
+                resume={
+                    "decision": "approve",
+                    "findings": review_ui["props"]["findings"],
+                    "reviewed_by": "Test Coordinator",
+                }
+            ),
             config=config,
             stream_mode=["updates", "values"],
             subgraphs=True,
@@ -225,17 +285,21 @@ def test_stream_reports_each_completed_node() -> None:
         -1
     ]
 
-    assert resumed_nodes == [
-        "review_referral_packet",
-        "clinical_requirements",
-    ]
+    assert resumed_nodes == ["review_referral_packet"]
     parent_update = next(
-        part["data"]["clinical_requirements"]
+        part["data"]["review_referral_packet"]
         for part in resumed_parts
-        if part["type"] == "updates" and "clinical_requirements" in part["data"]
+        if part["type"] == "updates" and "review_referral_packet" in part["data"]
     )
-    assert set(parent_update) == {"clinical_requirements", "outcome"}
+    assert set(parent_update) == {
+        "clinical_requirements",
+        "outcome",
+        "ui",
+        "workflow",
+    }
     assert final_state["outcome"] == "referral_approved"
+    assert final_state["workflow"]["coordinator_review"]["status"] == "complete"
+    assert final_state["ui"][-1]["name"] == "referral_completion"
 
 
 def test_server_graph_exposes_minimal_public_schema() -> None:
@@ -247,6 +311,7 @@ def test_server_graph_exposes_command_routes() -> None:
     graph = server_graph.get_graph()
     routes = {(edge.source, edge.target) for edge in graph.edges}
 
+    assert ("start_intake", "parse_pdf") in routes
     assert ("parse_pdf", "extract_fields") in routes
     assert ("extract_fields", "check_routing") in routes
     assert ("check_routing", "validate_patient") in routes
@@ -341,6 +406,17 @@ def test_human_can_reject_referral() -> None:
     assert result["clinical_requirements"].decision is ReferralDecision.REJECT
 
 
+def test_human_can_edit_clinical_findings() -> None:
+    result = run_graph(
+        extraction(),
+        edited_value="Coordinator confirmed the right knee is affected.",
+    )
+
+    finding = result["clinical_requirements"].findings[0]
+    assert finding.status is RequirementStatus.DOCUMENTED
+    assert finding.value == "Coordinator confirmed the right knee is affected."
+
+
 def test_routing_mismatch_pauses_for_human_review() -> None:
     dependencies = GraphDependencies(
         parser=StubParser(),
@@ -358,10 +434,11 @@ def test_routing_mismatch_pauses_for_human_review() -> None:
     )
     request = paused["__interrupt__"][0].value
 
-    assert request["instruction"] == (
-        "Review the routing mismatch and enter review text."
+    assert request == {"type": "routing_review"}
+    routing_ui = next(
+        message for message in paused["ui"] if message["name"] == "routing_review"
     )
-    assert "subspecialty" in request["reason"]
+    assert "subspecialty" in routing_ui["props"]["reason"]
 
     result = graph.invoke(
         Command(resume="Reviewed by intake coordinator."),
@@ -370,6 +447,7 @@ def test_routing_mismatch_pauses_for_human_review() -> None:
 
     assert result["outcome"] == "human_reviewed"
     assert result["review_text"] == "Reviewed by intake coordinator."
+    assert result["workflow"]["intake_details"]["status"] == "attention"
     assert "patient" not in result
 
 
@@ -391,6 +469,7 @@ def test_missing_patient_data_routes_to_missing_information() -> None:
 
     assert result["outcome"] == "needs_information"
     assert result["missing_fields"] == ["patient.date_of_birth"]
+    assert result["workflow"]["intake_details"]["status"] == "attention"
     assert "insurance" not in result
 
 
@@ -417,6 +496,7 @@ def test_missing_insurance_data_routes_to_missing_information() -> None:
     assert result["outcome"] == "needs_information"
     assert result["patient"].last_name == "Turner"
     assert result["missing_fields"] == ["insurance.member_id"]
+    assert result["workflow"]["intake_details"]["status"] == "attention"
     assert "insurance" not in result
 
 
@@ -456,11 +536,55 @@ def test_referral_type_rejects_unsupported_values() -> None:
 def test_graph_dependencies_use_structured_llm_adapters_by_default() -> None:
     dependencies = GraphDependencies()
 
-    assert isinstance(dependencies.extractor, StructuredReferralExtractor)
-    assert isinstance(dependencies.reference_selector, StructuredReferenceSelector)
+    assert isinstance(dependencies.extractor, NavigatorReferralExtractor)
+    assert isinstance(dependencies.reference_selector, NavigatorReferenceSelector)
     assert isinstance(
-        dependencies.requirement_extractor, StructuredRequirementExtractor
+        dependencies.requirement_extractor, NavigatorRequirementExtractor
     )
+
+
+def test_navigator_referral_extractor_uses_uf_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = extraction()
+    settings: dict[str, object] = {}
+
+    class StubStructuredModel:
+        def invoke(self, prompt: str) -> ReferralExtraction:
+            assert "<referral>\n# Synthetic referral\n</referral>" in prompt
+            return expected
+
+    class StubChatModel:
+        def with_structured_output(
+            self,
+            schema: type[ReferralExtraction],
+            method: str,
+        ) -> StubStructuredModel:
+            assert schema is ReferralExtraction
+            assert method == "json_schema"
+            return StubStructuredModel()
+
+    def stub_chat_openai(**kwargs: object) -> StubChatModel:
+        settings.update(kwargs)
+        return StubChatModel()
+
+    monkeypatch.setenv("NAVIGATOR_API_KEY", "navigator-key")
+    monkeypatch.setenv("NAVIGATOR_MODEL", "navigator-model")
+    monkeypatch.setattr(
+        "referral_intake.llm_navigator.ChatOpenAI",
+        stub_chat_openai,
+    )
+
+    result = NavigatorReferralExtractor().extract("# Synthetic referral")
+
+    assert result == expected
+    assert settings == {
+        "openai_api_base": "https://api.ai.it.ufl.edu",
+        "openai_api_key": "navigator-key",
+        "model": "navigator-model",
+        "temperature": 0.1,
+        "max_retries": 2,
+    }
 
 
 def test_referral_extractor_uses_initialized_structured_model(
@@ -617,3 +741,36 @@ def test_requirement_extractor_uses_compiled_definitions(
     )
 
     assert result == expected
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_review_records_coordinator_and_server_timestamp(decision: str) -> None:
+    from datetime import UTC, datetime
+
+    before = datetime.now(UTC)
+    result = run_graph(extraction(), decision=decision)
+    clinical = result["clinical_requirements"]
+
+    assert clinical.reviewed_by == "Test Coordinator"
+    assert before <= datetime.fromisoformat(clinical.reviewed_at) <= datetime.now(UTC)
+    assert clinical.decision.value == decision
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 121])
+def test_review_requires_a_coordinator_name(name: str) -> None:
+    from referral_intake.clinical_requirements.models import ReferralReviewResponse
+
+    with pytest.raises(ValueError):
+        ReferralReviewResponse(decision="approve", findings=[], reviewed_by=name)
+
+
+def test_review_cannot_supply_its_own_timestamp() -> None:
+    from referral_intake.clinical_requirements.models import ReferralReviewResponse
+
+    with pytest.raises(ValueError):
+        ReferralReviewResponse.model_validate({
+            "decision": "approve",
+            "findings": [],
+            "reviewed_by": "Coordinator",
+            "reviewed_at": "2000-01-01T00:00:00Z",
+        })

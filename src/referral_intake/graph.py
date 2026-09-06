@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 from referral_intake.clinical_requirements.graph import (
     build_clinical_requirements_graph,
 )
+from referral_intake.clinical_requirements.nodes import review_referral_packet
 from referral_intake.dependencies import GraphDependencies
 from referral_intake.nodes import (
     check_routing,
@@ -16,6 +17,7 @@ from referral_intake.nodes import (
     human_review,
     missing_information,
     parse_pdf,
+    start_intake,
     validate_insurance,
     validate_patient,
 )
@@ -34,6 +36,11 @@ def build_graph(
         output_schema=ReferralState,
     )
 
+    builder.add_node(
+        "start_intake",
+        start_intake,
+        destinations=("parse_pdf",),
+    )
     builder.add_node(
         "parse_pdf",
         partial(parse_pdf, dependencies=dependencies),
@@ -56,7 +63,9 @@ def build_graph(
         "clinical_requirements",
         build_clinical_requirements_graph(dependencies),
     )
+    builder.add_node("review_referral_packet", review_referral_packet)
     builder.add_node("missing_information", missing_information)
 
-    builder.add_edge(START, "parse_pdf")
+    builder.add_edge(START, "start_intake")
+    builder.add_edge("clinical_requirements", "review_referral_packet")
     return builder.compile(checkpointer=checkpointer)

@@ -10,6 +10,22 @@ from pydantic import ValidationError
 from referral_intake.dependencies import GraphDependencies
 from referral_intake.models import Insurance, Patient
 from referral_intake.state import ReferralState
+from referral_intake.ui import completion_ui, ui_message
+from referral_intake.workflow import workflow_ui_update
+
+
+def start_intake(
+    state: ReferralState,
+) -> Command[Literal["parse_pdf"]]:
+    """Start coordinator-facing progress before document parsing begins."""
+
+    return Command(
+        update=workflow_ui_update(
+            state.get("workflow", {}),
+            ("referral_packet", "active"),
+        ),
+        goto="parse_pdf",
+    )
 
 
 def parse_pdf(
@@ -22,7 +38,14 @@ def parse_pdf(
     if not markdown.strip():
         raise ValueError("The referral PDF produced empty Markdown.")
     return Command(
-        update={"markdown": markdown},
+        update={
+            "markdown": markdown,
+            **workflow_ui_update(
+                state["workflow"],
+                ("referral_packet", "complete"),
+                ("intake_details", "active"),
+            ),
+        },
         goto="extract_fields",
     )
 
@@ -63,11 +86,31 @@ def check_routing(
         if value is None or value.casefold() not in allowed[name]
     ]
     if failures:
+        message = "Referral does not match the receiving practice's " + (
+            f"routing rules: {', '.join(failures)}."
+        )
+        progress = workflow_ui_update(
+            state["workflow"],
+            ("intake_details", "attention"),
+        )
         return Command(
             update={
                 "outcome": "human_review_required",
-                "message": "Referral does not match the receiving practice's "
-                f"routing rules: {', '.join(failures)}.",
+                "message": message,
+                **progress,
+                "ui": [
+                    progress["ui"],
+                    ui_message(
+                        "routing_review",
+                        {
+                            "instruction": "Review the routing mismatch and enter "
+                            "a review note.",
+                            "reason": message,
+                            "editable": True,
+                        },
+                        "routing-review",
+                    ),
+                ],
             },
             goto="human_review",
         )
@@ -77,12 +120,7 @@ def check_routing(
 def human_review(state: ReferralState) -> Command[Literal[END]]:
     """Pause a routing mismatch until a human records a review note."""
 
-    review_text = interrupt(
-        {
-            "instruction": "Review the routing mismatch and enter review text.",
-            "reason": state["message"],
-        }
-    )
+    review_text = interrupt({"type": "routing_review"})
     if not isinstance(review_text, str) or not review_text.strip():
         raise ValueError("Human review text must be a non-empty string.")
 
@@ -90,6 +128,19 @@ def human_review(state: ReferralState) -> Command[Literal[END]]:
         update={
             "outcome": "human_reviewed",
             "review_text": review_text.strip(),
+            "ui": [
+                ui_message(
+                    "routing_review",
+                    {
+                        "instruction": "Routing review completed.",
+                        "reason": state["message"],
+                        "review_text": review_text.strip(),
+                        "editable": False,
+                    },
+                    "routing-review",
+                ),
+                completion_ui("human_reviewed"),
+            ],
         },
         goto=END,
     )
@@ -105,6 +156,10 @@ def validate_patient(
         patient = Patient.model_validate(extracted.model_dump())
     except ValidationError as error:
         missing = _missing_fields("patient", error)
+        progress = workflow_ui_update(
+            state["workflow"],
+            ("intake_details", "attention"),
+        )
         return Command(
             update={
                 "missing_fields": missing,
@@ -112,6 +167,7 @@ def validate_patient(
                 "message": (
                     f"Missing required patient information: {', '.join(missing)}."
                 ),
+                **progress,
             },
             goto="missing_information",
         )
@@ -135,6 +191,10 @@ def validate_insurance(
         insurance = Insurance.model_validate(extracted.model_dump())
     except ValidationError as error:
         missing = _missing_fields("insurance", error)
+        progress = workflow_ui_update(
+            state["workflow"],
+            ("intake_details", "attention"),
+        )
         return Command(
             update={
                 "missing_fields": missing,
@@ -142,6 +202,7 @@ def validate_insurance(
                 "message": (
                     f"Missing required insurance information: {', '.join(missing)}."
                 ),
+                **progress,
             },
             goto="missing_information",
         )
@@ -150,6 +211,11 @@ def validate_insurance(
         update={
             "insurance": insurance,
             "missing_fields": [],
+            **workflow_ui_update(
+                state["workflow"],
+                ("intake_details", "complete"),
+                ("clinical_review", "active"),
+            ),
         },
         goto="clinical_requirements",
     )
@@ -158,12 +224,12 @@ def validate_insurance(
 def missing_information(state: ReferralState) -> Command[Literal[END]]:
     """Finalize a missing-information outcome."""
 
+    message = state.get("message", "Required referral information is missing.")
     return Command(
         update={
             "outcome": "needs_information",
-            "message": state.get(
-                "message", "Required referral information is missing."
-            ),
+            "message": message,
+            "ui": completion_ui("needs_information", message),
         },
         goto=END,
     )

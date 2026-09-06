@@ -1,10 +1,10 @@
-"""Provider-neutral structured-output adapters."""
+"""UF Navigator structured-output adapters."""
 
 import json
 import os
 
 from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 from referral_intake.clinical_requirements.models import (
@@ -15,33 +15,25 @@ from referral_intake.clinical_requirements.models import (
 from referral_intake.extraction import EXTRACTION_INSTRUCTIONS, validate_extraction
 from referral_intake.models import ReferralExtraction
 
-API_KEY_SETTING_BY_PROVIDER = {
-    "google_genai": "GEMINI_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
+NAVIGATOR_API_BASE = "https://api.ai.it.ufl.edu"
 
 
 def _structured_model(schema: type[BaseModel]):
-    """Initialize the configured chat model with structured output."""
+    """Initialize UF Navigator with structured output."""
 
     load_dotenv()
-    provider_name = _required_setting("LLM_PROVIDER")
-    model_name = _required_setting("LLM_MODEL")
-    api_key_setting = API_KEY_SETTING_BY_PROVIDER.get(provider_name)
-    if api_key_setting is None:
-        raise RuntimeError(f"Unsupported LLM_PROVIDER: {provider_name}.")
-
-    llm = init_chat_model(
-        model=model_name,
-        model_provider=provider_name,
-        api_key=_required_setting(api_key_setting),
+    llm = ChatOpenAI(
+        openai_api_base=NAVIGATOR_API_BASE,
+        openai_api_key=_required_setting("NAVIGATOR_API_KEY"),
+        model=_required_setting("NAVIGATOR_MODEL"),
+        temperature=0.1,
         max_retries=2,
     )
     return llm.with_structured_output(schema, method="json_schema")
 
 
 def _required_setting(name: str) -> str:
-    """Read a required LLM setting from the environment."""
+    """Read a required Navigator setting from the environment."""
 
     value = os.getenv(name)
     if not value:

@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@langchain/langgraph-sdk": "^1.10.0",
     "@langchain/react": "^1.0.33",
+    "@radix-ui/react-use-controllable-state": "^1.2.6",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
@@ -22,6 +24,7 @@
     "lucide-react": "^1.37.0",
     "nanoid": "^5.1.16",
     "next": "16.3.3",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "shadcn": "^4.19.0",

@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Stream · Referral Intake",
+  title: "Stream IO : Patient Referral Intake",
   description: "Provider referral intake workspace",
 };
 

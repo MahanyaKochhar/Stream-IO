@@ -1,20 +1,20 @@
 # Referral Intake Agent Flow
 
-Baseline version: `v1.2`
+Baseline version: `v1.4`
 
-Updated: 2026-08-24
+Updated: 2026-09-03
 
 Status: clinical findings require human approval or rejection
 
 The compiled `clinical_requirements` graph is one node in the parent referral
-graph after insurance validation. Its working fields remain private; the parent
-receives one typed `clinical_requirements` result containing the selected skill,
-logical references, compiled requirements, extracted findings, and the human
-decision.
+graph after insurance validation. It returns a typed draft containing the
+selected skill, references, requirements, and findings. The parent then pauses
+at `review_referral_packet` so the root UI stream can present editable findings.
 
 ```mermaid
 flowchart TD
     START([Start])
+    INIT_PROGRESS[Start coordinator workflow]
     PARSE[Parse referral PDF into Markdown<br/>LlamaParse only]
     EXTRACT[Extract nested referral fields<br/>provider-neutral structured output]
     ROUTING{"Specialty and<br/>subspecialty match?"}
@@ -32,7 +32,6 @@ flowchart TD
         LOAD_REFERENCES[Load selected references]
         COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
         EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
-        REVIEW_PACKET[Human review<br/>approve or reject packet]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
@@ -40,16 +39,17 @@ flowchart TD
         SELECT_REFERENCES --> LOAD_REFERENCES
         LOAD_REFERENCES --> COMPILE_REQUIREMENTS
         COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
-        EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     end
 
+    REVIEW_PACKET[Editable clinical review<br/>approve or reject packet]
     HUMAN_REVIEW[Human review<br/>enter review text]
     REVIEWED([Human review complete])
     MISSING_INFO([Missing information])
     APPROVED([Referral approved])
     REJECTED([Referral rejected])
 
-    START --> PARSE
+    START --> INIT_PROGRESS
+    INIT_PROGRESS --> PARSE
     PARSE --> EXTRACT
     EXTRACT --> ROUTING
     ROUTING -->|Yes| PATIENT
@@ -61,6 +61,7 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
+    EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     REVIEW_PACKET -->|Approve| APPROVED
     REVIEW_PACKET -->|Reject| REJECTED
 
@@ -73,8 +74,8 @@ flowchart TD
     classDef subagent fill:#f3e8ff,stroke:#9333ea,color:#581c87,stroke-width:2px;
 
     class START,CR_START input;
-    class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS,REVIEW_PACKET subagent;
+    class INIT_PROGRESS,PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW,REVIEW_PACKET process;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
     class APPROVED success;
     class MISSING_INFO,REVIEWED,REJECTED attention;
@@ -84,13 +85,15 @@ flowchart TD
 
 | Graph node | Responsibility | Next path |
 |---|---|---|
+| `start_intake` | Initialize coordinator-facing workflow progress | `Command(goto="parse_pdf")` |
 | `parse_pdf` | Parse the PDF into Markdown using LlamaParse only | `Command(goto="extract_fields")` |
 | `extract_fields` | Store provider-neutral `ReferralExtraction` under `state.extracted` | `Command(goto="check_routing")` |
 | `check_routing` | Check specialty and subspecialty against in-code policy | Command to patient validation or human review |
 | `human_review` | Pause with `interrupt()` and store non-empty reviewer text on resume | `Command(goto=END)` |
 | `validate_patient` | Validate required patient fields and promote `state.patient` | Command to insurance validation or missing information |
 | `validate_insurance` | Validate required insurance fields and promote `state.insurance` | Command to `clinical_requirements` or missing information |
-| `clinical_requirements` | Run the compiled clinical subgraph through requirement extraction and human review | Referral approved or rejected |
+| `clinical_requirements` | Run the clinical subgraph and return draft requirements and findings | `review_referral_packet` |
+| `review_referral_packet` | Pause for editable findings and an approve/reject decision | `Command(goto=END)` |
 | `missing_information` | Finalize the missing-field message | `Command(goto=END)` |
 
 ## Clinical requirements subagent
@@ -105,8 +108,7 @@ node. Internally, its initial linear flow is:
 | `select_references` | Read `SKILL.md` and return one supported condition ID and one supported service ID | `Command(goto="load_references")` |
 | `load_references` | Deterministically load both selected files, keyed by logical reference ID | `Command(goto="compile_requirements")` |
 | `compile_requirements` | Deterministically merge the requirement definitions in `SKILL.md` and the selected references | `Command(goto="extract_requirement_values")` |
-| `extract_requirement_values` | Use structured LLM output to extract one finding per compiled requirement from referral Markdown | `Command(goto="review_referral_packet")` |
-| `review_referral_packet` | Pause once with `interrupt()` for a human to enter `approve` or `reject`; construct the final clinical result | `Command(goto=END)` |
+| `extract_requirement_values` | Extract one finding per compiled requirement and return the draft clinical result | `Command(goto=END)` |
 
 The initial catalog contains only `orthopedics/knee`. Each Markdown file keeps
 human-readable instructions and a YAML requirement-definition block with stable
@@ -155,6 +157,13 @@ ReferralState
 │   └── referral_type: ReferralType
 ├── patient: Patient                 # includes required validated sex
 ├── insurance: Insurance             # present only after validation
+├── workflow                         # coordinator-facing UI stages keyed by ID
+│   └── {stage_id}
+│       ├── title
+│       ├── description
+│       ├── status                   # active, complete, or attention
+│       └── order
+├── ui                               # registry-driven LangGraph UI messages
 ├── clinical_requirements: ClinicalRequirementsResult
 │   ├── skill: ClinicalSkillName
 │   ├── references: ReferenceSelection
@@ -199,6 +208,13 @@ returns. No separate state object is manually passed between the graphs.
 `outcome` and `message` only for meaningful terminal, missing-information, or
 human-review results; routine processing transitions are represented by
 `Command(goto=...)` alone.
+
+Coordinator progress is independent of internal node names. Meaningful nodes
+merge entries into `state.workflow` and emit named messages into `state.ui`.
+The frontend maps `referral_progress`, `clinical_review`, `routing_review`, and
+`referral_completion` through a component registry. The clinical subgraph
+returns before the parent interrupt, so editable review UI is present in the
+root `useStream.values.ui` state when the run pauses.
 
 The requirement extraction LLM receives only the compiled definitions and full
 referral Markdown. It returns structured findings and is instructed to avoid

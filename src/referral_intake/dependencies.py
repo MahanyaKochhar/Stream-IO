@@ -9,7 +9,7 @@ from referral_intake.clinical_requirements.models import (
     RequirementDefinition,
     RequirementExtraction,
 )
-from referral_intake.llm import (
+from referral_intake.llm_navigator import (
     StructuredReferenceSelector,
     StructuredReferralExtractor,
     StructuredRequirementExtractor,

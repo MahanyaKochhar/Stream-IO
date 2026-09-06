@@ -1,3 +1,5 @@
+import type { UIMessage } from "@langchain/langgraph-sdk/react-ui";
+
 export const AGENT_SERVER_URL =
   process.env.NEXT_PUBLIC_LANGGRAPH_API_URL ?? "http://127.0.0.1:2024";
 
@@ -6,7 +8,7 @@ export const ASSISTANT_ID = "referral_intake";
 export type Patient = {
   first_name: string;
   last_name: string;
-  date_of_birth: string;
+  date_of_birth: string | [number, number, number];
   sex: string;
   phone?: string | null;
 };
@@ -36,6 +38,16 @@ export type Finding = {
   value?: string | null;
 };
 
+export type WorkflowStep = {
+  id: string;
+  title: string;
+  description: string;
+  status: "active" | "complete" | "attention";
+  order: number;
+};
+
+export type CoordinatorWorkflow = Record<string, WorkflowStep>;
+
 export type ClinicalRequirements = {
   skill: string;
   references: {
@@ -44,7 +56,9 @@ export type ClinicalRequirements = {
   };
   requirements: Requirement[];
   findings: Finding[];
-  decision: "approve" | "reject";
+  decision?: "approve" | "reject" | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
 };
 
 export type ReferralExtraction = {
@@ -63,6 +77,7 @@ export type ReferralExtraction = {
 
 export type ReferralState = {
   pdf_path?: string;
+  pdf_name?: string;
   markdown?: string;
   extracted?: ReferralExtraction;
   patient?: Patient;
@@ -71,13 +86,12 @@ export type ReferralState = {
   outcome?: string;
   missing_fields?: string[];
   message?: string;
+  workflow?: CoordinatorWorkflow;
+  ui?: UIMessage[];
 };
 
 export type ReviewInterrupt = {
-  instruction: string;
-  options: Array<"approve" | "reject">;
-  findings: Finding[];
-  requirements?: Requirement[];
+  type: "clinical_review" | "routing_review";
 };
 
 export type ReferralThread = {

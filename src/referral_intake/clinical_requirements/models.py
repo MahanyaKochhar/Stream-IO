@@ -1,8 +1,9 @@
 """Structured models for clinical requirement extraction."""
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class ClinicalSkillName(StrEnum):
@@ -78,6 +79,18 @@ class ReferralDecision(StrEnum):
     REJECT = "reject"
 
 
+class ReferralReviewResponse(BaseModel):
+    """Editable findings and decision returned by the coordinator UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: ReferralDecision
+    findings: list[RequirementFinding]
+    reviewed_by: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]
+
+
 class ClinicalRequirementsResult(BaseModel):
     """Single clinical-requirements output returned to the parent graph."""
 
@@ -87,4 +100,6 @@ class ClinicalRequirementsResult(BaseModel):
     references: ReferenceSelection
     requirements: list[RequirementDefinition]
     findings: list[RequirementFinding]
-    decision: ReferralDecision
+    decision: ReferralDecision | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None

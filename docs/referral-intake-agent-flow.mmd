@@ -1,5 +1,6 @@
 flowchart TD
     START([Start])
+    INIT_PROGRESS[Start coordinator workflow]
     PARSE[Parse referral PDF into Markdown<br/>LlamaParse only]
     EXTRACT[Extract nested referral fields<br/>provider-neutral structured output]
     ROUTING{"Specialty and<br/>subspecialty match?"}
@@ -17,7 +18,6 @@ flowchart TD
         LOAD_REFERENCES[Load selected references]
         COMPILE_REQUIREMENTS[Compile requirements<br/>deterministic]
         EXTRACT_REQUIREMENTS[Extract requirement values<br/>structured LLM output]
-        REVIEW_PACKET[Human review<br/>approve or reject packet]
 
         CR_START --> SELECT_SKILL
         SELECT_SKILL --> LOAD_SKILL
@@ -25,16 +25,17 @@ flowchart TD
         SELECT_REFERENCES --> LOAD_REFERENCES
         LOAD_REFERENCES --> COMPILE_REQUIREMENTS
         COMPILE_REQUIREMENTS --> EXTRACT_REQUIREMENTS
-        EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     end
 
+    REVIEW_PACKET[Editable clinical review<br/>approve or reject packet]
     HUMAN_REVIEW[Human review<br/>enter review text]
     REVIEWED([Human review complete])
     MISSING_INFO([Missing information])
     APPROVED([Referral approved])
     REJECTED([Referral rejected])
 
-    START --> PARSE
+    START --> INIT_PROGRESS
+    INIT_PROGRESS --> PARSE
     PARSE --> EXTRACT
     EXTRACT --> ROUTING
     ROUTING -->|Yes| PATIENT
@@ -46,6 +47,7 @@ flowchart TD
     INSURANCE --> INSURANCE_VALID
     INSURANCE_VALID -->|Yes| CR_START
     INSURANCE_VALID -->|No| MISSING_INFO
+    EXTRACT_REQUIREMENTS --> REVIEW_PACKET
     REVIEW_PACKET -->|Approve| APPROVED
     REVIEW_PACKET -->|Reject| REJECTED
 
@@ -58,8 +60,8 @@ flowchart TD
     classDef subagent fill:#f3e8ff,stroke:#9333ea,color:#581c87,stroke-width:2px;
 
     class START,CR_START input;
-    class PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW process;
-    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS,REVIEW_PACKET subagent;
+    class INIT_PROGRESS,PARSE,EXTRACT,PATIENT,INSURANCE,HUMAN_REVIEW,REVIEW_PACKET process;
+    class SELECT_SKILL,LOAD_SKILL,SELECT_REFERENCES,LOAD_REFERENCES,COMPILE_REQUIREMENTS,EXTRACT_REQUIREMENTS subagent;
     class ROUTING,PATIENT_VALID,INSURANCE_VALID decision;
     class APPROVED success;
     class MISSING_INFO,REVIEWED,REJECTED attention;

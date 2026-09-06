@@ -8,6 +8,7 @@ import {
   Clock3,
   FileCheck2,
   RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 
 import { ReferralChat } from "@/components/referral-chat";
@@ -92,11 +93,34 @@ function ReferralRows({ threads }: { threads: ReferralThread[] }) {
   );
 }
 
+type QueueView = "active" | "completed" | "review";
+
+const queueDetails: Record<
+  QueueView,
+  { label: string; description: string; icon: typeof Clock3 }
+> = {
+  active: {
+    label: "Active intake",
+    description: "Packets currently being processed",
+    icon: Clock3,
+  },
+  completed: {
+    label: "Completed",
+    description: "Reviewed and closed intake records",
+    icon: CheckCircle2,
+  },
+  review: {
+    label: "Review",
+    description: "Packets awaiting a clinical decision",
+    icon: ShieldCheck,
+  },
+};
+
 export function ReferralWorkspace() {
   const [threads, setThreads] = useState<ReferralThread[]>([]);
-  const [chatKey, setChatKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [queueView, setQueueView] = useState<QueueView>("active");
 
   const loadThreads = useCallback(async () => {
     try {
@@ -139,107 +163,120 @@ export function ReferralWorkspace() {
     };
   }, [loadThreads]);
 
-  const running = useMemo(
-    () => threads.filter((thread) => thread.status !== "idle"),
+  const active = useMemo(
+    () =>
+      threads.filter(
+        (thread) => thread.status !== "idle" && thread.status !== "interrupted"
+      ),
     [threads]
   );
   const completed = useMemo(
     () => threads.filter((thread) => thread.status === "idle" && thread.values),
     [threads]
   );
+  const review = useMemo(
+    () => threads.filter((thread) => thread.status === "interrupted"),
+    [threads]
+  );
+  const queues = { active, completed, review };
+  const selectedQueue = queues[queueView];
+  const selectedDetails = queueDetails[queueView];
 
   return (
     <main className="mx-auto grid w-full max-w-[1500px] flex-1 gap-6 px-4 py-6 md:px-8 lg:grid-cols-[minmax(0,1fr)_410px]">
-      <section className="min-w-0 space-y-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stream-teal">
-              Intake workspace
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">
-              Referral overview
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-              Track new packets from intake through clinical review in one focused queue.
-            </p>
-          </div>
-          <button
-            className="inline-flex h-9 items-center justify-center gap-2 self-start rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 sm:self-auto"
-            onClick={() => void loadThreads()}
-            type="button"
-          >
-            <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        </div>
+      <section className="grid min-w-0 gap-6 xl:grid-cols-[190px_minmax(0,1fr)]">
+        <nav
+          aria-label="Referral queues"
+          className="flex min-w-0 items-center xl:sticky xl:top-24 xl:h-[calc(100vh-12rem)] xl:self-start"
+        >
+          <div className="grid w-full grid-cols-3 gap-2 xl:grid-cols-1 xl:gap-1">
+            {(Object.keys(queueDetails) as QueueView[]).map((view) => {
+              const details = queueDetails[view];
+              const Icon = details.icon;
+              const selected = queueView === view;
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-500">Active intake</p>
-              <Clock3 className="size-4 text-stream-blue" />
-            </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-              {running.length}
-            </p>
+              return (
+                <button
+                  aria-current={selected ? "page" : undefined}
+                  className={`flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition xl:w-full ${
+                    selected
+                      ? "bg-stream-navy text-white shadow-sm"
+                      : "text-slate-600 hover:bg-white hover:text-stream-navy"
+                  }`}
+                  key={view}
+                  onClick={() => setQueueView(view)}
+                  type="button"
+                >
+                  <Icon
+                    className={`size-4 shrink-0 ${selected ? "text-stream-aqua" : "text-slate-400"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold sm:text-sm">
+                    {details.label}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      selected ? "bg-white/10 text-white" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {queues[view].length}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-500">Completed</p>
-              <CheckCircle2 className="size-4 text-stream-teal" />
-            </div>
-            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-              {completed.length}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-stream-navy bg-stream-navy p-4 text-white shadow-sm">
-            <p className="text-xs font-medium text-slate-300">Review queue</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {threads.filter((thread) => thread.status === "interrupted").length}
-            </p>
-          </div>
-        </div>
+        </nav>
 
-        {error && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {error} Start the LangGraph server at {AGENT_SERVER_URL}.
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 space-y-8">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
-              <h2 className="text-base font-semibold text-slate-950">Running</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Processing and human-review referrals
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stream-teal">
+                Intake workspace
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">
+                Referral overview
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
+                Track new packets from intake through clinical review in one focused queue.
               </p>
             </div>
-            <span className="text-xs font-semibold text-slate-400">{running.length}</span>
+            <button
+              className="inline-flex h-9 items-center justify-center gap-2 self-start rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 sm:self-auto"
+              onClick={() => void loadThreads()}
+              type="button"
+            >
+              <RefreshCw
+                className={`size-3.5 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
           </div>
-          <ReferralRows threads={running} />
-        </div>
 
-        <div className="space-y-3 pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-950">Completed</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Reviewed and closed intake records
-              </p>
+          {error && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {error} Start the LangGraph server at {AGENT_SERVER_URL}.
             </div>
-            <span className="text-xs font-semibold text-slate-400">
-              {completed.length}
-            </span>
+          )}
+
+          <div className="space-y-3 pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-950">
+                  {selectedDetails.label}
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {selectedDetails.description}
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-slate-400">
+                {selectedQueue.length}
+              </span>
+            </div>
+            <ReferralRows threads={selectedQueue} />
           </div>
-          <ReferralRows threads={completed} />
         </div>
       </section>
 
-      <ReferralChat
-        key={chatKey}
-        onNewReferral={() => setChatKey((key) => key + 1)}
-        onReferralChange={() => void loadThreads()}
-      />
+      <ReferralChat onReferralChange={() => void loadThreads()} />
     </main>
   );
 }

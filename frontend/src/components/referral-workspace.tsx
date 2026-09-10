@@ -74,6 +74,9 @@ function ReferralRows({ threads }: { threads: ReferralThread[] }) {
                 thread.values?.extracted?.referral_type ??
                 "Referral intake"}
             </p>
+            <p className="mt-1.5 break-all text-[10px] leading-4 text-slate-400">
+              {thread.thread_id}
+            </p>
           </div>
           <div className="hidden min-w-0 sm:block">
             <p className="truncate text-xs font-medium text-slate-700">
@@ -93,14 +96,14 @@ function ReferralRows({ threads }: { threads: ReferralThread[] }) {
   );
 }
 
-type QueueView = "active" | "completed" | "review";
+type QueueView = "processing" | "completed" | "review";
 
 const queueDetails: Record<
   QueueView,
   { label: string; description: string; icon: typeof Clock3 }
 > = {
-  active: {
-    label: "Active intake",
+  processing: {
+    label: "Processing",
     description: "Packets currently being processed",
     icon: Clock3,
   },
@@ -120,7 +123,7 @@ export function ReferralWorkspace() {
   const [threads, setThreads] = useState<ReferralThread[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [queueView, setQueueView] = useState<QueueView>("active");
+  const [queueView, setQueueView] = useState<QueueView>("processing");
 
   const loadThreads = useCallback(async () => {
     try {
@@ -163,22 +166,20 @@ export function ReferralWorkspace() {
     };
   }, [loadThreads]);
 
-  const active = useMemo(
-    () =>
-      threads.filter(
-        (thread) => thread.status !== "idle" && thread.status !== "interrupted"
-      ),
-    [threads]
-  );
-  const completed = useMemo(
-    () => threads.filter((thread) => thread.status === "idle" && thread.values),
-    [threads]
-  );
-  const review = useMemo(
-    () => threads.filter((thread) => thread.status === "interrupted"),
-    [threads]
-  );
-  const queues = { active, completed, review };
+  const queues = useMemo(() => {
+    const result: Record<QueueView, ReferralThread[]> = {
+      processing: [],
+      completed: [],
+      review: [],
+    };
+    for (const thread of threads) {
+      if (thread.status === "interrupted") result.review.push(thread);
+      else if (thread.status === "idle" && thread.values)
+        result.completed.push(thread);
+      else result.processing.push(thread);
+    }
+    return result;
+  }, [threads]);
   const selectedQueue = queues[queueView];
   const selectedDetails = queueDetails[queueView];
 
@@ -233,10 +234,10 @@ export function ReferralWorkspace() {
                 Intake workspace
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">
-                Referral overview
+                {selectedDetails.label}
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                Track new packets from intake through clinical review in one focused queue.
+                {selectedDetails.description}
               </p>
             </div>
             <button
@@ -258,19 +259,6 @@ export function ReferralWorkspace() {
           )}
 
           <div className="space-y-3 pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-slate-950">
-                  {selectedDetails.label}
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {selectedDetails.description}
-                </p>
-              </div>
-              <span className="text-xs font-semibold text-slate-400">
-                {selectedQueue.length}
-              </span>
-            </div>
             <ReferralRows threads={selectedQueue} />
           </div>
         </div>

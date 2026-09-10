@@ -1,33 +1,17 @@
 # Osteoarthritis
 
-Use with the common requirements in `SKILL.md`.
+Use with the shared checklist in `SKILL.md`.
 
-Extract or explicitly mark missing:
-
-- affected knee and symptom duration
-- pain, stiffness, swelling, and functional limitations
-- examination findings, including range of motion and gait when documented
-- knee X-ray date and impression, including location and severity of
-  degenerative changes
-- medications, physical therapy or exercise, injections, bracing, assistive
-  devices, and documented response
-- previous knee procedures or surgery
+Use these additional findings for documented or suspected knee osteoarthritis.
+Imaging findings, including compartment involvement and degenerative severity,
+are captured once in the shared imaging requirement. Do not infer clinical severity from radiographs
+alone or require MRI for every osteoarthritis referral.
 
 ## Requirement definitions
 
 ```yaml
 requirements:
-  - id: osteoarthritis.symptoms
-    description: Pain, stiffness, swelling, symptom duration, and function.
-  - id: osteoarthritis.exam
-    description: Range of motion, gait, and other relevant examination findings.
-  - id: osteoarthritis.xray
-    description: X-ray date, location, and severity of degenerative changes.
-  - id: osteoarthritis.nonoperative_care
-    description: Medication, therapy, injections, bracing, devices, and response.
-  - id: osteoarthritis.prior_surgery
-    description: Previous knee procedures or surgery.
+- id: osteoarthritis.stiffness
+  description: Knee stiffness
+  guidance: Knee stiffness and its duration or activity pattern.
 ```
-
-Do not infer clinical severity from imaging alone. MRI is not required for every
-osteoarthritis referral.

@@ -9,7 +9,6 @@ from langgraph.graph.state import CompiledStateGraph
 from referral_intake.clinical_requirements.graph import (
     build_clinical_requirements_graph,
 )
-from referral_intake.clinical_requirements.nodes import review_referral_packet
 from referral_intake.dependencies import GraphDependencies
 from referral_intake.nodes import (
     check_routing,
@@ -17,6 +16,7 @@ from referral_intake.nodes import (
     human_review,
     missing_information,
     parse_pdf,
+    review_referral_packet,
     start_intake,
     validate_insurance,
     validate_patient,

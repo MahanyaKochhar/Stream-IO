@@ -1,5 +1,6 @@
 """Node functions for the referral intake graph."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -7,10 +8,15 @@ from langgraph.graph import END
 from langgraph.types import Command, interrupt
 from pydantic import ValidationError
 
+from referral_intake.clinical_requirements.models import (
+    ClinicalRequirementsResult,
+    ReferralDecision,
+    ReferralReviewResponse,
+)
 from referral_intake.dependencies import GraphDependencies
 from referral_intake.models import Insurance, Patient
 from referral_intake.state import ReferralState
-from referral_intake.ui import completion_ui, ui_message
+from referral_intake.ui import clinical_review_ui, completion_ui, ui_message
 from referral_intake.workflow import workflow_ui_update
 
 
@@ -218,6 +224,57 @@ def validate_insurance(
             ),
         },
         goto="clinical_requirements",
+    )
+
+
+def review_referral_packet(
+    state: ReferralState,
+) -> Command[Literal[END]]:
+    """Pause for a human to approve or reject the referral packet."""
+
+    response = interrupt({"type": "clinical_review"})
+    review = ReferralReviewResponse.model_validate(response)
+    decision = review.decision
+    clinical = state["clinical_requirements"]
+    expected_ids = {requirement.id for requirement in clinical.requirements}
+    finding_ids = [finding.requirement_id for finding in review.findings]
+    if len(finding_ids) != len(expected_ids) or set(finding_ids) != expected_ids:
+        raise ValueError("Reviewed findings must match the clinical requirements.")
+
+    outcome = (
+        "referral_approved"
+        if decision is ReferralDecision.APPROVE
+        else "referral_rejected"
+    )
+    progress = workflow_ui_update(
+        state["workflow"],
+        ("coordinator_review", "complete"),
+    )
+    return Command(
+        update={
+            "clinical_requirements": ClinicalRequirementsResult(
+                skill=clinical.skill,
+                references=clinical.references,
+                requirements=clinical.requirements,
+                findings=review.findings,
+                decision=decision,
+                reviewed_by=review.reviewed_by,
+                reviewed_at=datetime.now(UTC).isoformat(),
+            ),
+            "outcome": outcome,
+            **progress,
+            "ui": [
+                progress["ui"],
+                clinical_review_ui(
+                    clinical.requirements,
+                    review.findings,
+                    editable=False,
+                    decision=decision,
+                ),
+                completion_ui(outcome),
+            ],
+        },
+        goto=END,
     )
 
 

@@ -16,8 +16,10 @@ npm run dev
 Open `http://localhost:3000`.
 
 `NEXT_PUBLIC_LANGGRAPH_API_URL` controls the Agent Server URL. The local upload
-route writes PDFs to the system temporary directory so the local graph process
-can read them. Use private object storage and authenticated server endpoints in
+route writes PDFs to `../data/uploads/` at the repository root (ignored by Git),
+creating the folder automatically. The local graph process reads the same files.
+Run the frontend commands from this `frontend/` directory.
+Use private object storage and authenticated server endpoints in
 production.
 
 ## Checks

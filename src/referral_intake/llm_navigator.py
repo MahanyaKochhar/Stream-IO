@@ -109,6 +109,8 @@ class StructuredRequirementExtractor:
             (
                 "system",
                 "Extract only information explicitly documented in the referral. "
+                "Use each requirement's guidance as its extraction criteria; "
+                "description is a short display label. "
                 "Return exactly one finding for every requirement ID. Use "
                 "documented with a concise value when present; otherwise use "
                 "not_documented with a null value. Do not infer clinical facts.",

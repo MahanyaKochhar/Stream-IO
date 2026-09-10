@@ -88,8 +88,9 @@ component registry maps each message name to an AI Elements component, including
 editable clinical findings and the terminal assistant response. No private model
 reasoning is exposed.
 
-For local development, the frontend upload route stores the PDF in the system
-temporary directory and submits that server-readable path to the graph. Replace
+For local development, the frontend upload route stores PDFs in `data/uploads/`
+at the repository root (ignored by Git) and submits the absolute path to the graph.
+The folder is created automatically on upload. Replace
 this handoff with private object storage before deploying the two services on
 separate hosts.
 

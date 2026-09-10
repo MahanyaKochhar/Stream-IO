@@ -9,6 +9,7 @@ from referral_intake.clinical_requirements.models import (
     RequirementDefinition,
     RequirementExtraction,
 )
+from referral_intake.enums import Specialty, Subspecialty
 from referral_intake.llm_navigator import (
     StructuredReferenceSelector,
     StructuredReferralExtractor,
@@ -83,9 +84,11 @@ class RoutingPolicy:
     """Initial receiving-practice routing rules kept in code."""
 
     specialties: frozenset[str] = field(
-        default_factory=lambda: frozenset({"orthopedic surgery", "orthopaedic surgery"})
+        default_factory=lambda: frozenset(value.casefold() for value in Specialty)
     )
-    subspecialties: frozenset[str] = field(default_factory=lambda: frozenset({"knee"}))
+    subspecialties: frozenset[str] = field(
+        default_factory=lambda: frozenset(value.casefold() for value in Subspecialty)
+    )
 
 
 @dataclass(frozen=True)

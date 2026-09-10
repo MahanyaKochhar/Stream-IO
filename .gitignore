@@ -11,3 +11,5 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+/data/uploads/
+/knee_test_suite

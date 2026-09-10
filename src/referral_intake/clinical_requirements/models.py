@@ -43,6 +43,7 @@ class RequirementDefinition(BaseModel):
 
     id: str
     description: str
+    guidance: str | None = None
     required: bool = True
     source: str
 

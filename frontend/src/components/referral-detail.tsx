@@ -23,6 +23,7 @@ import {
   type ReferralState,
   patientName,
   fileName,
+  formatBirthDate,
 } from "@/lib/referrals";
 
 function Field({ label, value }: { label: string; value?: string | null }) {
@@ -111,10 +112,7 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
   const reviewPending = Boolean(clinical && !clinical.decision);
   const patient = state.patient ?? extracted?.patient;
   const insurance = state.insurance ?? extracted?.insurance;
-  const birthDate = patient?.date_of_birth;
-  const dob = Array.isArray(birthDate)
-    ? birthDate.map((part) => String(part).padStart(2, "0")).join("-")
-    : birthDate?.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+  const dob = formatBirthDate(patient?.date_of_birth);
 
   return (
     <main className="mx-auto w-full max-w-[1800px] flex-1 px-3 py-8 sm:px-5 md:px-8">
@@ -140,8 +138,8 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
               ? "Review required"
               : (state.outcome?.replaceAll("_", " ") ?? "In progress")}
           </span>
-          <span className="text-xs text-slate-400">
-            Record {threadId.slice(0, 8)}
+          <span className="break-all text-xs text-slate-400">
+            {threadId}
           </span>
         </div>
       </div>
@@ -186,6 +184,16 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
                     value={extracted?.referral_type}
                   />
                 </dl>
+                <div className="mt-5 border-t border-slate-100 pt-5">
+                  <h3 className="mb-4 text-sm font-semibold text-slate-700">
+                    Referring provider
+                  </h3>
+                  <dl className="grid gap-5 @xl:grid-cols-2">
+                    <Field label="Name" value={extracted?.referring_provider?.name} />
+                    <Field label="NPI" value={extracted?.referring_provider?.npi} />
+                    <Field label="Organization" value={extracted?.referring_provider?.organization} />
+                  </dl>
+                </div>
               </Section>
             </div>
             {clinical ? (

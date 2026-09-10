@@ -1,10 +1,9 @@
 """Nodes for the clinical-requirements subagent."""
 
-from datetime import UTC, datetime
 from typing import Literal
 
 from langgraph.graph import END
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 
 from referral_intake.clinical_requirements.catalog import (
     compile_requirements as compile_skill_requirements,
@@ -20,15 +19,10 @@ from referral_intake.clinical_requirements.catalog import (
 )
 from referral_intake.clinical_requirements.models import (
     ClinicalRequirementsResult,
-    ReferralDecision,
-    ReferralReviewResponse,
-    RequirementDefinition,
-    RequirementFinding,
 )
 from referral_intake.clinical_requirements.state import ClinicalRequirementsState
 from referral_intake.dependencies import GraphDependencies
-from referral_intake.state import ReferralState
-from referral_intake.ui import completion_ui, ui_message
+from referral_intake.ui import clinical_review_ui
 from referral_intake.workflow import workflow_ui_update
 
 
@@ -136,7 +130,7 @@ def extract_requirement_values(
             **progress,
             "ui": [
                 progress["ui"],
-                _clinical_review_ui(
+                clinical_review_ui(
                     state["compiled_requirements"],
                     extraction.findings,
                     editable=True,
@@ -144,80 +138,4 @@ def extract_requirement_values(
             ],
         },
         goto=END,
-    )
-
-
-def review_referral_packet(
-    state: ReferralState,
-) -> Command[Literal[END]]:
-    """Pause for a human to approve or reject the referral packet."""
-
-    response = interrupt({"type": "clinical_review"})
-    review = ReferralReviewResponse.model_validate(response)
-    decision = review.decision
-    clinical = state["clinical_requirements"]
-    expected_ids = {requirement.id for requirement in clinical.requirements}
-    finding_ids = [finding.requirement_id for finding in review.findings]
-    if len(finding_ids) != len(expected_ids) or set(finding_ids) != expected_ids:
-        raise ValueError("Reviewed findings must match the clinical requirements.")
-
-    outcome = (
-        "referral_approved"
-        if decision is ReferralDecision.APPROVE
-        else "referral_rejected"
-    )
-    progress = workflow_ui_update(
-        state["workflow"],
-        ("coordinator_review", "complete"),
-    )
-    return Command(
-        update={
-            "clinical_requirements": ClinicalRequirementsResult(
-                skill=clinical.skill,
-                references=clinical.references,
-                requirements=clinical.requirements,
-                findings=review.findings,
-                decision=decision,
-                reviewed_by=review.reviewed_by,
-                reviewed_at=datetime.now(UTC).isoformat(),
-            ),
-            "outcome": outcome,
-            **progress,
-            "ui": [
-                progress["ui"],
-                _clinical_review_ui(
-                    clinical.requirements,
-                    review.findings,
-                    editable=False,
-                    decision=decision,
-                ),
-                completion_ui(outcome),
-            ],
-        },
-        goto=END,
-    )
-
-
-def _clinical_review_ui(
-    requirements: list[RequirementDefinition],
-    findings: list[RequirementFinding],
-    *,
-    editable: bool,
-    decision: ReferralDecision | None = None,
-):
-    """Build the registered clinical-review component message."""
-
-    return ui_message(
-        "clinical_review",
-        {
-            "instruction": "Review and edit the clinical findings before deciding.",
-            "findings": [finding.model_dump(mode="json") for finding in findings],
-            "requirements": [
-                requirement.model_dump(mode="json")
-                for requirement in requirements
-            ],
-            "editable": editable,
-            "decision": decision.value if decision else None,
-        },
-        "clinical-review",
     )

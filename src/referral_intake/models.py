@@ -1,9 +1,17 @@
 """Domain models for extracted and validated referral data."""
 
-from datetime import date
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field
+
+from referral_intake.dates import BirthDate
+from referral_intake.enums import (
+    Condition,
+    Priority,
+    ReferralReason,
+    ReferralType,
+    Service,
+    Specialty,
+    Subspecialty,
+)
 
 
 class DomainModel(BaseModel):
@@ -17,7 +25,10 @@ class ExtractedPatient(DomainModel):
 
     first_name: str | None = None
     last_name: str | None = None
-    date_of_birth: date | None = None
+    date_of_birth: BirthDate | None = Field(
+        default=None,
+        description="Date of birth from the source, formatted as MM-DD-YYYY.",
+    )
     sex: str | None = None
     phone: str | None = None
 
@@ -27,7 +38,7 @@ class Patient(DomainModel):
 
     first_name: str = Field(min_length=1)
     last_name: str = Field(min_length=1)
-    date_of_birth: date
+    date_of_birth: BirthDate
     sex: str = Field(min_length=1)
     phone: str | None = None
 
@@ -56,15 +67,6 @@ class Provider(DomainModel):
     organization: str | None = None
 
 
-class ReferralType(StrEnum):
-    """Currently supported clinical referral classifications."""
-
-    GENERAL_KNEE_PAIN = "general knee pain"
-    MENISCUS_INTERNAL_DERANGEMENT = "meniscus/internal derangement"
-    ACL_PCL_INJURY = "ACL/PCL injury"
-    KNEE_OSTEOARTHRITIS_JOINT_REPLACEMENT = "knee osteoarthritis/joint replacement"
-
-
 class ReferralExtraction(DomainModel):
     """Provider-neutral structured output produced from referral Markdown."""
 
@@ -72,10 +74,10 @@ class ReferralExtraction(DomainModel):
     insurance: ExtractedInsurance
     provider: Provider
     referring_provider: Provider
-    specialty: str | None = None
-    subspecialty: str | None = None
-    service: str | None = None
-    condition: str | None = None
-    priority: str | None = None
-    reason_for_referral: str | None = None
+    specialty: Specialty | None = None
+    subspecialty: Subspecialty | None = None
+    service: Service | None = None
+    condition: Condition | None = None
+    priority: Priority | None = None
+    reason_for_referral: ReferralReason | None = None
     referral_type: ReferralType | None = None

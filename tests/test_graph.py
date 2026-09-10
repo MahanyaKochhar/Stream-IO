@@ -74,10 +74,8 @@ class StubReferenceSelector:
     ) -> ReferenceSelection:
         assert "# Knee Referral Intake" in skill_instructions
         assert condition == "Meniscus tear"
-        assert service == "Consultation; Evaluate and Treat"
-        assert reason_for_referral == (
-            "Persistent right knee pain after twisting injury."
-        )
+        assert service == "General consultation"
+        assert reason_for_referral == "Evaluate and treat"
         return ReferenceSelection(
             condition=ConditionReference.MENISCUS_TEAR,
             service=ServiceReference.GENERAL_CONSULT,
@@ -125,10 +123,10 @@ def extraction(**overrides: object) -> ReferralExtraction:
         ),
         "specialty": "Orthopedic Surgery",
         "subspecialty": "Knee",
-        "service": "Consultation; Evaluate and Treat",
+        "service": "General consultation",
         "condition": "Meniscus tear",
         "priority": "Routine",
-        "reason_for_referral": ("Persistent right knee pain after twisting injury."),
+        "reason_for_referral": "Evaluate and treat",
         "referral_type": ReferralType.MENISCUS_INTERNAL_DERANGEMENT,
     }
     values.update(overrides)
@@ -325,9 +323,7 @@ def test_valid_referral_reaches_next_stage() -> None:
     assert result["patient"].last_name == "Turner"
     assert result["patient"].sex == "Male"
     assert result["insurance"].member_id == "SHP-88294317"
-    assert result["extracted"].reason_for_referral == (
-        "Persistent right knee pain after twisting injury."
-    )
+    assert result["extracted"].reason_for_referral == "Evaluate and treat"
     assert "reason_for_referral" not in result
     assert result["missing_fields"] == []
     clinical = result["clinical_requirements"]
@@ -338,8 +334,8 @@ def test_valid_referral_reaches_next_stage() -> None:
     )
     requirement_ids = {requirement.id for requirement in clinical.requirements}
     assert "knee.affected_side" in requirement_ids
-    assert "meniscus.mechanical_symptoms" in requirement_ids
-    assert "consult.question" in requirement_ids
+    assert "meniscus.exam_findings" in requirement_ids
+    assert "consult.working_diagnosis" in requirement_ids
     assert {finding.requirement_id for finding in clinical.findings} == requirement_ids
     assert clinical.decision is ReferralDecision.APPROVE
     assert "selected_skill" not in result
@@ -420,7 +416,7 @@ def test_human_can_edit_clinical_findings() -> None:
 def test_routing_mismatch_pauses_for_human_review() -> None:
     dependencies = GraphDependencies(
         parser=StubParser(),
-        extractor=StubExtractor(extraction(subspecialty="Spine")),
+        extractor=StubExtractor(extraction(subspecialty=None)),
     )
     graph = build_graph(
         checkpointer=InMemorySaver(),

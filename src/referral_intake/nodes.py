@@ -171,7 +171,7 @@ def validate_patient(
                 "missing_fields": missing,
                 "outcome": "needs_information",
                 "message": (
-                    f"Missing required patient information: {', '.join(missing)}."
+                    f"Missing required patient information: {_missing_field_labels(missing)}."
                 ),
                 **progress,
             },
@@ -206,7 +206,7 @@ def validate_insurance(
                 "missing_fields": missing,
                 "outcome": "needs_information",
                 "message": (
-                    f"Missing required insurance information: {', '.join(missing)}."
+                    f"Missing required insurance information: {_missing_field_labels(missing)}."
                 ),
                 **progress,
             },
@@ -235,7 +235,7 @@ def review_referral_packet(
     response = interrupt({"type": "clinical_review"})
     review = ReferralReviewResponse.model_validate(response)
     decision = review.decision
-    clinical = state["clinical_requirements"]
+    clinical = ClinicalRequirementsResult.model_validate(state["clinical_requirements"])
     expected_ids = {requirement.id for requirement in clinical.requirements}
     finding_ids = [finding.requirement_id for finding in review.findings]
     if len(finding_ids) != len(expected_ids) or set(finding_ids) != expected_ids:
@@ -293,6 +293,15 @@ def missing_information(state: ReferralState) -> Command[Literal[END]]:
 
 
 def _missing_fields(prefix: str, error: ValidationError) -> list[str]:
-    """Return stable, user-facing paths for failed required fields."""
+    """Return stable field paths for programmatic validation handling."""
 
     return sorted({f"{prefix}.{item['loc'][0]}" for item in error.errors()})
+
+
+def _missing_field_labels(fields: list[str]) -> str:
+    """Format validation paths for referral coordinators."""
+
+    return ", ".join(
+        field.rsplit(".", 1)[-1].replace("_", " ").replace(" id", " ID").replace("member ID", "Member ID")
+        for field in fields
+    )

@@ -191,6 +191,12 @@ function RoutingReview({
 function ReferralCompletion({ message }: RegistryComponentProps) {
   const props = message.props as CompletionProps;
   const successful = props.outcome === "referral_approved";
+  // Older threads may still contain validation paths in their saved messages.
+  const text = props.outcome === "needs_information"
+    ? props.message.replace(/\b(?:patient|insurance)\.([a-z_]+)\b/g, (_, field: string) =>
+        field.replaceAll("_", " ").replace(/\bid\b/g, "ID"),
+      ).replace(/\bmember id\b/gi, "Member ID")
+    : props.message;
 
   return (
     <div
@@ -201,7 +207,7 @@ function ReferralCompletion({ message }: RegistryComponentProps) {
       }`}
     >
       <p className="text-sm font-semibold text-slate-950">{props.title}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-600">{props.message}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
     </div>
   );
 }

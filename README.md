@@ -57,6 +57,23 @@ threads, checkpoints, and interrupt resumption; no custom FastAPI or SSE layer i
 needed. Local `langgraph dev` uses its development persistence. The explicit
 checkpoint lifecycle is owned by Agent Server.
 
+For the local frontend with the Docker backend, start Docker and run:
+
+```bash
+.venv/bin/langgraph up --wait --docker-compose compose.local.yml
+```
+
+Set `NEXT_PUBLIC_LANGGRAPH_API_URL=http://127.0.0.1:8123` in
+`frontend/.env.local`. Next.js saves uploaded PDFs in the repository's
+`data/uploads/` directory. The Compose override mounts that directory read-only
+at `/uploads` in the backend. Upload responses use `/uploads/<filename>.pdf`;
+the UI's PDF endpoint maps those paths back to the repository folder. Existing
+host paths remain readable by the UI. New UI uploads require this Docker mount;
+the `langgraph dev` command above does not provide `/uploads` on the host.
+
+Include `--docker-compose compose.local.yml` whenever rebuilding with `up`.
+Starting the existing containers retains the mount and database volume.
+
 The exported graph creates one `GraphDependencies` container and binds it to
 the node functions when the server imports the graph. Parsers, model adapters,
 and routing policy therefore stay outside checkpointed referral state without

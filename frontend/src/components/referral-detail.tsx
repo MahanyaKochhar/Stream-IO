@@ -75,7 +75,9 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
       ? stream.error.message
       : stream.error
         ? "Referral record could not be loaded."
-        : null;
+        : !stream.isThreadLoading && !stream.values.pdf_path
+          ? "This referral's saved state is unavailable. Return to the workspace and upload the packet again."
+          : null;
 
   if (error && !stream.values.pdf_path) {
     return (
@@ -90,7 +92,7 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
     );
   }
 
-  if (stream.isThreadLoading || !stream.values.pdf_path) {
+  if (stream.isThreadLoading) {
     return (
       <main className="mx-auto w-full max-w-5xl flex-1 animate-pulse px-5 py-10 md:px-8">
         <div className="h-4 w-32 rounded bg-slate-200" />
@@ -210,7 +212,9 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
               />
             ) : (
               <p className="my-6 text-sm text-slate-500">
-                Clinical findings will appear when extraction is complete.
+                {state.outcome === "needs_information"
+                  ? "Clinical review has not started because required referral information is missing."
+                  : "Clinical findings will appear when extraction is complete."}
               </p>
             )}
           </section>

@@ -2,7 +2,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { NextResponse } from "next/server";
 import { AGENT_SERVER_URL } from "@/lib/referrals";
-import { PDF_UPLOAD_DIRECTORY } from "@/lib/pdf-storage";
+import { localPdfPath, PDF_UPLOAD_DIRECTORY } from "@/lib/pdf-storage";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ export async function GET(
     }
 
     // Only serve uploaded PDFs or the repository's sample packet.
-    const path = await realpath(pdfPath);
+    const path = await realpath(localPdfPath(pdfPath));
     const uploads = await realpath(PDF_UPLOAD_DIRECTORY).catch(
       () => PDF_UPLOAD_DIRECTORY,
     );

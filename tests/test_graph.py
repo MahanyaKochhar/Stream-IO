@@ -300,6 +300,31 @@ def test_stream_reports_each_completed_node() -> None:
     assert final_state["ui"][-1]["name"] == "referral_completion"
 
 
+def test_restored_json_findings_can_resume_review() -> None:
+    saved = run_graph(extraction())
+    clinical = saved["clinical_requirements"].model_dump(mode="json")
+    clinical.update(decision=None, reviewed_by=None, reviewed_at=None)
+    graph = build_graph(GraphDependencies(), checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "restored-review"}}
+    graph.update_state(
+        config,
+        {**saved, "clinical_requirements": clinical},
+        as_node="clinical_requirements",
+    )
+    paused = graph.invoke(None, config=config)
+    assert paused["__interrupt__"][0].value == {"type": "clinical_review"}
+    result = graph.invoke(
+        Command(resume={
+            "decision": "approve",
+            "findings": clinical["findings"],
+            "reviewed_by": "Test Coordinator",
+        }),
+        config=config,
+    )
+    assert result["outcome"] == "referral_approved"
+    assert result["clinical_requirements"].reviewed_by == "Test Coordinator"
+
+
 def test_server_graph_exposes_minimal_public_schema() -> None:
     assert server_graph.get_input_jsonschema()["required"] == ["pdf_path"]
     assert server_graph.get_context_jsonschema() is None
@@ -465,6 +490,7 @@ def test_missing_patient_data_routes_to_missing_information() -> None:
 
     assert result["outcome"] == "needs_information"
     assert result["missing_fields"] == ["patient.date_of_birth"]
+    assert result["message"] == "Missing required patient information: date of birth."
     assert result["workflow"]["intake_details"]["status"] == "attention"
     assert "insurance" not in result
 
@@ -492,6 +518,7 @@ def test_missing_insurance_data_routes_to_missing_information() -> None:
     assert result["outcome"] == "needs_information"
     assert result["patient"].last_name == "Turner"
     assert result["missing_fields"] == ["insurance.member_id"]
+    assert result["message"] == "Missing required insurance information: Member ID."
     assert result["workflow"]["intake_details"]["status"] == "attention"
     assert "insurance" not in result
 

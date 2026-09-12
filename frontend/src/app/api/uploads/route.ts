@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { NextResponse } from "next/server";
-import { PDF_UPLOAD_DIRECTORY } from "@/lib/pdf-storage";
+import {
+  BACKEND_PDF_UPLOAD_DIRECTORY,
+  PDF_UPLOAD_DIRECTORY,
+} from "@/lib/pdf-storage";
 
 export const runtime = "nodejs";
 
@@ -27,13 +30,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const path = join(PDF_UPLOAD_DIRECTORY, `${randomUUID()}.pdf`);
+  const filename = `${randomUUID()}.pdf`;
+  const path = join(PDF_UPLOAD_DIRECTORY, filename);
 
   await mkdir(PDF_UPLOAD_DIRECTORY, { recursive: true });
   await writeFile(path, Buffer.from(await file.arrayBuffer()));
 
   return NextResponse.json({
-    path,
+    path: posix.join(BACKEND_PDF_UPLOAD_DIRECTORY, filename),
     filename: file.name,
     size: file.size,
   });

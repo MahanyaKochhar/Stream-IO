@@ -34,10 +34,17 @@ function StatusPill({ thread }: { thread: ReferralThread }) {
             : "bg-teal-50 text-teal-700";
 
   return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${style}`}
-    >
-      {label}
+    <span className="inline-flex flex-col items-center gap-1">
+      <span
+        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${style}`}
+      >
+        {label}
+      </span>
+      {thread.status === "idle" && thread.values?.outcome === "needs_information" && (
+        <span className="text-[10px] font-normal text-amber-700">
+          (Needs information)
+        </span>
+      )}
     </span>
   );
 }

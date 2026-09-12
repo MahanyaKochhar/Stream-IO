@@ -1,0 +1,4 @@
+services:
+  langgraph-api:
+    volumes:
+      - ./data/uploads:/uploads:ro

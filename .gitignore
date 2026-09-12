@@ -13,3 +13,4 @@ build/
 *.egg-info/
 /data/uploads/
 /knee_test_suite
+.ruff_cache

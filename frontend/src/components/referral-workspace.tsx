@@ -126,11 +126,10 @@ const queueDetails: Record<
   },
 };
 
-export function ReferralWorkspace() {
+export function ReferralWorkspace({ queueView }: { queueView: QueueView }) {
   const [threads, setThreads] = useState<ReferralThread[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [queueView, setQueueView] = useState<QueueView>("processing");
 
   const loadThreads = useCallback(async () => {
     try {
@@ -204,7 +203,7 @@ export function ReferralWorkspace() {
               const selected = queueView === view;
 
               return (
-                <button
+                <Link
                   aria-current={selected ? "page" : undefined}
                   className={`flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition xl:w-full ${
                     selected
@@ -212,8 +211,8 @@ export function ReferralWorkspace() {
                       : "text-slate-600 hover:bg-white hover:text-stream-navy"
                   }`}
                   key={view}
-                  onClick={() => setQueueView(view)}
-                  type="button"
+                  href={view === "processing" ? "/" : `/?queue=${view}`}
+                  scroll={false}
                 >
                   <Icon
                     className={`size-4 shrink-0 ${selected ? "text-stream-aqua" : "text-slate-400"}`}
@@ -228,7 +227,7 @@ export function ReferralWorkspace() {
                   >
                     {queues[view].length}
                   </span>
-                </button>
+                </Link>
               );
             })}
           </div>

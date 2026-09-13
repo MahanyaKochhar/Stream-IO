@@ -27,6 +27,10 @@ def completion_ui(outcome: str, message: str | None = None) -> UIMessage:
     """Build the assistant completion message for a terminal outcome."""
 
     copy = {
+        "not_referral_document": (
+            "Not a referral document",
+            message or "Please upload a patient referral packet.",
+        ),
         "referral_approved": (
             "Referral approved",
             "The referral packet was approved and intake is complete.",

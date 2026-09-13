@@ -5,6 +5,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from referral_intake.classification import DocumentClassification
 from referral_intake.clinical_requirements.catalog import (
     compile_requirements,
     load_references,
@@ -53,6 +54,14 @@ class StubParser:
     def parse(self, pdf_path: Path) -> str:
         assert pdf_path == Path("referral.pdf")
         return "# Synthetic referral"
+
+
+class StubClassifier:
+    def classify(self, markdown: str) -> DocumentClassification:
+        assert markdown == "# Synthetic referral"
+        return DocumentClassification(
+            is_referral=True, reason="Patient referral request."
+        )
 
 
 class StubExtractor:
@@ -140,6 +149,7 @@ def run_graph(
 ) -> dict[str, object]:
     dependencies = GraphDependencies(
         parser=StubParser(),
+        classifier=StubClassifier(),
         extractor=StubExtractor(result),
         reference_selector=StubReferenceSelector(),
         requirement_extractor=StubRequirementExtractor(),
@@ -184,6 +194,7 @@ def run_graph(
 def test_stream_reports_each_completed_node() -> None:
     dependencies = GraphDependencies(
         parser=StubParser(),
+        classifier=StubClassifier(),
         extractor=StubExtractor(extraction()),
         reference_selector=StubReferenceSelector(),
         requirement_extractor=StubRequirementExtractor(),
@@ -214,6 +225,7 @@ def test_stream_reports_each_completed_node() -> None:
     assert completed_nodes == [
         "start_intake",
         "parse_pdf",
+        "classify_document",
         "extract_fields",
         "check_routing",
         "validate_patient",
@@ -335,7 +347,10 @@ def test_server_graph_exposes_command_routes() -> None:
     routes = {(edge.source, edge.target) for edge in graph.edges}
 
     assert ("start_intake", "parse_pdf") in routes
-    assert ("parse_pdf", "extract_fields") in routes
+    assert ("parse_pdf", "classify_document") in routes
+    assert ("classify_document", "extract_fields") in routes
+    assert ("classify_document", "__end__") in routes
+    assert ("parse_pdf", "extract_fields") not in routes
     assert ("extract_fields", "check_routing") in routes
     assert ("check_routing", "validate_patient") in routes
     assert ("check_routing", "human_review") in routes
@@ -441,6 +456,7 @@ def test_human_can_edit_clinical_findings() -> None:
 def test_routing_mismatch_pauses_for_human_review() -> None:
     dependencies = GraphDependencies(
         parser=StubParser(),
+        classifier=StubClassifier(),
         extractor=StubExtractor(extraction(subspecialty=None)),
     )
     graph = build_graph(

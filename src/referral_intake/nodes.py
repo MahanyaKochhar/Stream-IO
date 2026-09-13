@@ -8,6 +8,7 @@ from langgraph.graph import END
 from langgraph.types import Command, interrupt
 from pydantic import ValidationError
 
+from referral_intake.classification import DocumentClassification
 from referral_intake.clinical_requirements.models import (
     ClinicalRequirementsResult,
     ReferralDecision,
@@ -37,15 +38,45 @@ def start_intake(
 def parse_pdf(
     state: ReferralState,
     dependencies: GraphDependencies,
-) -> Command[Literal["extract_fields"]]:
+) -> Command[Literal["classify_document"]]:
     """Parse the referral PDF into Markdown using LlamaParse."""
 
     markdown = dependencies.parser.parse(Path(state["pdf_path"]))
     if not markdown.strip():
         raise ValueError("The referral PDF produced empty Markdown.")
+    return Command(update={"markdown": markdown}, goto="classify_document")
+
+
+def classify_document(
+    state: ReferralState,
+    dependencies: GraphDependencies,
+) -> Command[Literal["extract_fields", END]]:
+    """Route referrals to extraction and end unrelated document intake."""
+
+    classification = DocumentClassification.model_validate(
+        dependencies.classifier.classify(state["markdown"])
+    )
+    if not classification.is_referral:
+        message = "Not a referral document. Please upload a patient referral packet."
+        progress = workflow_ui_update(
+            state["workflow"], ("referral_packet", "attention")
+        )
+        return Command(
+            update={
+                "document_classification": classification,
+                "outcome": "not_referral_document",
+                "message": message,
+                **progress,
+                "ui": [
+                    progress["ui"],
+                    completion_ui("not_referral_document", message),
+                ],
+            },
+            goto=END,
+        )
     return Command(
         update={
-            "markdown": markdown,
+            "document_classification": classification,
             **workflow_ui_update(
                 state["workflow"],
                 ("referral_packet", "complete"),
@@ -171,7 +202,8 @@ def validate_patient(
                 "missing_fields": missing,
                 "outcome": "needs_information",
                 "message": (
-                    f"Missing required patient information: {_missing_field_labels(missing)}."
+                    "Missing required patient information: "
+                    f"{_missing_field_labels(missing)}."
                 ),
                 **progress,
             },
@@ -206,7 +238,8 @@ def validate_insurance(
                 "missing_fields": missing,
                 "outcome": "needs_information",
                 "message": (
-                    f"Missing required insurance information: {_missing_field_labels(missing)}."
+                    "Missing required insurance information: "
+                    f"{_missing_field_labels(missing)}."
                 ),
                 **progress,
             },
@@ -302,6 +335,9 @@ def _missing_field_labels(fields: list[str]) -> str:
     """Format validation paths for referral coordinators."""
 
     return ", ".join(
-        field.rsplit(".", 1)[-1].replace("_", " ").replace(" id", " ID").replace("member ID", "Member ID")
+        field.rsplit(".", 1)[-1]
+        .replace("_", " ")
+        .replace(" id", " ID")
+        .replace("member ID", "Member ID")
         for field in fields
     )

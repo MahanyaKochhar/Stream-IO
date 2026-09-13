@@ -3,7 +3,7 @@
 from functools import partial
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from referral_intake.clinical_requirements.graph import (
@@ -12,6 +12,7 @@ from referral_intake.clinical_requirements.graph import (
 from referral_intake.dependencies import GraphDependencies
 from referral_intake.nodes import (
     check_routing,
+    classify_document,
     extract_fields,
     human_review,
     missing_information,
@@ -44,7 +45,12 @@ def build_graph(
     builder.add_node(
         "parse_pdf",
         partial(parse_pdf, dependencies=dependencies),
-        destinations=("extract_fields",),
+        destinations=("classify_document",),
+    )
+    builder.add_node(
+        "classify_document",
+        partial(classify_document, dependencies=dependencies),
+        destinations=("extract_fields", END),
     )
     builder.add_node(
         "extract_fields",

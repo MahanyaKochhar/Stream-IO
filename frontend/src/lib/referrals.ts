@@ -131,6 +131,7 @@ export function statusLabel(thread: ReferralThread): string {
   if (thread.status === "busy") return "Running";
   if (thread.status === "interrupted") return "Review needed";
   if (thread.status === "error") return "Needs attention";
+  if (thread.values?.outcome === "not_referral_document") return "Not a referral";
   if (thread.values?.outcome === "referral_approved") return "Approved";
   if (thread.values?.outcome === "referral_rejected") return "Rejected";
   return "Completed";

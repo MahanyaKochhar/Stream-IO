@@ -5,12 +5,14 @@ from typing import Annotated, Literal, NotRequired
 from langgraph.graph.ui import AnyUIMessage, ui_message_reducer
 from typing_extensions import TypedDict
 
+from referral_intake.classification import DocumentClassification
 from referral_intake.clinical_requirements.models import ClinicalRequirementsResult
 from referral_intake.models import Insurance, Patient, ReferralExtraction
 from referral_intake.workflow import WorkflowChannel
 
 Outcome = Literal[
     "processing",
+    "not_referral_document",
     "needs_information",
     "human_review_required",
     "human_reviewed",
@@ -62,6 +64,7 @@ class ReferralState(
 
     patient: Patient
     insurance: Insurance
+    document_classification: NotRequired[DocumentClassification]
     missing_fields: NotRequired[list[str]]
     message: NotRequired[str]
     review_text: NotRequired[str]

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from referral_intake.classification import DocumentClassification
 from referral_intake.clinical_requirements.models import (
     ReferenceSelection,
     RequirementDefinition,
@@ -11,6 +12,7 @@ from referral_intake.clinical_requirements.models import (
 )
 from referral_intake.enums import Specialty, Subspecialty
 from referral_intake.llm_navigator import (
+    StructuredDocumentClassifier,
     StructuredReferenceSelector,
     StructuredReferralExtractor,
     StructuredRequirementExtractor,
@@ -22,6 +24,12 @@ class PdfParser(Protocol):
     """Convert a referral PDF into Markdown."""
 
     def parse(self, pdf_path: Path) -> str: ...
+
+
+class DocumentClassifier(Protocol):
+    """Recognize a referral before extracting patient and clinical fields."""
+
+    def classify(self, markdown: str) -> DocumentClassification: ...
 
 
 class ReferralExtractor(Protocol):
@@ -96,6 +104,7 @@ class GraphDependencies:
     """Services and policy shared by every node in one compiled graph."""
 
     parser: PdfParser = field(default_factory=LlamaParsePdfParser)
+    classifier: DocumentClassifier = field(default_factory=StructuredDocumentClassifier)
     extractor: ReferralExtractor = field(default_factory=StructuredReferralExtractor)
     reference_selector: ClinicalReferenceSelector = field(
         default_factory=StructuredReferenceSelector

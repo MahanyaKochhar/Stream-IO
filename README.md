@@ -5,7 +5,49 @@ referral intent, extract fields, validate routing and required data, and prepare
 clinical findings for coordinator review. LLM calls use UF Navigator. The current
 clinical catalog supports orthopedic knee referrals.
 
-See the [workflow](docs/referral-intake-agent-flow.md) for node behavior and state.
+See the [project brief](healthcare_referral_ai_project_brief.md) for the project
+outline, implemented scope, and future work.
+
+## Workflow
+
+```mermaid
+flowchart TD
+    START([Start]) --> INIT[start_intake]
+    INIT --> PARSE[parse_pdf<br/>LlamaParse to Markdown]
+    PARSE --> CLASSIFY{classify_document<br/>LLM: referral document?}
+    CLASSIFY -->|No| NOT_REFERRAL([Not a referral document])
+    CLASSIFY -->|Yes| EXTRACT[extract_fields<br/>Structured LLM output]
+    EXTRACT --> ROUTING{check_routing}
+    ROUTING -->|Mismatch| HUMAN[human_review<br/>Interrupt for routing note]
+    HUMAN --> REVIEWED([Routing review recorded])
+    ROUTING -->|Match| PATIENT{validate_patient}
+    PATIENT -->|Missing fields| MISSING[missing_information]
+    PATIENT -->|Valid| INSURANCE{validate_insurance}
+    INSURANCE -->|Missing fields| MISSING
+    MISSING --> INCOMPLETE([Needs information])
+    INSURANCE -->|Valid| SELECT_SKILL
+
+    subgraph CLINICAL[clinical_requirements subgraph]
+        SELECT_SKILL[select_skill] --> LOAD_SKILL[load_skill]
+        LOAD_SKILL --> SELECT_REFS[select_references<br/>LLM]
+        SELECT_REFS --> LOAD_REFS[load_references]
+        LOAD_REFS --> COMPILE[compile_requirements]
+        COMPILE --> FINDINGS[extract_requirement_values<br/>LLM]
+    end
+
+    FINDINGS --> REVIEW[review_referral_packet<br/>Interrupt for editable findings and decision]
+    REVIEW -->|Approve| APPROVED([Referral approved])
+    REVIEW -->|Reject| REJECTED([Referral rejected])
+
+    classDef decision fill:#fff7d6,stroke:#ca8a04,color:#422006;
+    classDef attention fill:#ffedd5,stroke:#ea580c,color:#7c2d12;
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#14532d;
+    class CLASSIFY,ROUTING,PATIENT,INSURANCE decision;
+    class NOT_REFERRAL,INCOMPLETE,REVIEWED,REJECTED attention;
+    class APPROVED success;
+```
+
+See the [full workflow document](docs/referral-intake-agent-flow.md) for node behavior and state.
 
 ## Setup
 
@@ -50,6 +92,19 @@ npm run dev
 
 Open `http://localhost:3000`. Each PDF starts a new thread. Non-referral documents
 end with “Not a referral document.” Referral reviews resume the same thread.
+
+## Sample knee referral PDFs
+
+Use the PDFs in [knee_test_suite](knee_test_suite/) to try the intake workflow.
+Attach one packet in the app to start a new referral case.
+
+- [KNEE-100](knee_test_suite/KNEE-100.pdf)
+- [KNEE-101](knee_test_suite/KNEE-101.pdf)
+- [KNEE-102](knee_test_suite/KNEE-102.pdf)
+- [KNEE-103](knee_test_suite/KNEE-103.pdf)
+- [KNEE-104](knee_test_suite/KNEE-104.pdf)
+- [KNEE-105](knee_test_suite/KNEE-105.pdf)
+- [KNEE-106](knee_test_suite/KNEE-106.pdf)
 
 ## Restart, rebuild, and storage
 

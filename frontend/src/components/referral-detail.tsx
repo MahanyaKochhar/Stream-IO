@@ -6,6 +6,7 @@ import { useStream } from "@langchain/react";
 import { ClinicalFindings } from "@/components/clinical-findings";
 import { ReferralConversation } from "@/components/referral-chat";
 import { SourcePdf } from "@/components/source-pdf";
+import { respondToReview, useReferralState } from "@/lib/use-referral-state";
 import {
   ArrowLeft,
   FileText,
@@ -20,7 +21,6 @@ import {
   AGENT_SERVER_URL,
   ASSISTANT_ID,
   type ReviewInterrupt,
-  type ReferralState,
   patientName,
   fileName,
   formatBirthDate,
@@ -64,22 +64,23 @@ function Section({
 export function ReferralDetail({ threadId }: { threadId: string }) {
   const [sourceOpen, setSourceOpen] = useState(true);
   const [sourceExpanded, setSourceExpanded] = useState(false);
-  const stream = useStream<ReferralState, ReviewInterrupt>({
+  const stream = useStream<Record<string, unknown>, ReviewInterrupt>({
     apiUrl: AGENT_SERVER_URL,
     assistantId: ASSISTANT_ID,
     threadId,
     optimistic: false,
   });
+  const state = useReferralState(stream);
   const error =
     stream.error instanceof Error
       ? stream.error.message
       : stream.error
         ? "Referral record could not be loaded."
-        : !stream.isThreadLoading && !stream.values.pdf_path
+        : !stream.isThreadLoading && !state.pdf_path
           ? "This referral's saved state is unavailable. Return to the workspace and upload the packet again."
           : null;
 
-  if (error && !stream.values.pdf_path) {
+  if (error && !state.pdf_path) {
     return (
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-10 md:px-8">
         <Link className="text-sm font-medium text-stream-teal" href="/">
@@ -102,7 +103,6 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
     );
   }
 
-  const state = stream.values;
   const extracted = state.extracted;
   const clinical = state.clinical_requirements;
   const storedName = fileName(state.pdf_path);
@@ -111,7 +111,10 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
     (/^[0-9a-f-]{36}\.pdf$/i.test(storedName)
       ? "Referral packet.pdf"
       : storedName || "Referral packet.pdf");
-  const reviewPending = Boolean(clinical && !clinical.decision);
+  const reviewPending = stream.interrupt?.value?.type === "clinical_review";
+  const missingReviewCheckpoint = Boolean(
+    clinical && !clinical.decision && !reviewPending,
+  );
   const patient = state.patient ?? extracted?.patient;
   const insurance = state.insurance ?? extracted?.insurance;
   const dob = formatBirthDate(patient?.date_of_birth);
@@ -201,14 +204,15 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
             {clinical ? (
               <ClinicalFindings
                 clinical={clinical}
-                canReview={stream.interrupt?.value?.type === "clinical_review"}
+                canReview={reviewPending}
                 isLoading={stream.isLoading}
-                respond={(response) =>
-                  stream.respond(response, {
-                    interruptId: stream.interrupt?.id,
-                  })
+                respond={(response) => respondToReview(stream, response)}
+                submissionError={
+                  error ??
+                  (missingReviewCheckpoint
+                    ? "This referral has no active review checkpoint. Start a new chat and process the PDF again."
+                    : null)
                 }
-                submissionError={error}
               />
             ) : (
               <p className="my-6 text-sm text-slate-500">

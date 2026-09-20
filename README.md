@@ -65,7 +65,7 @@ NAVIGATOR_MODEL=
 LANGSMITH_API_KEY=
 ```
 
-Classification and extraction share the Navigator model configuration.
+The stream_agent, classification, and extraction share the Navigator model configuration.
 
 ## Run the app
 
@@ -90,8 +90,10 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Each PDF starts a new thread. Non-referral documents
-end with “Not a referral document.” Referral reviews resume the same thread.
+Open `http://localhost:3000`. Chat and PDF uploads go through the `stream_agent`
+agent. Each conversation supports one referral packet. Non-referral documents
+end with “Not a referral document.” Referral reviews resume the same thread;
+complete the pending review before sending another chat message.
 
 ## Sample knee referral PDFs
 

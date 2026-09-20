@@ -1,7 +1,7 @@
 import { readFile, realpath } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { NextResponse } from "next/server";
-import { AGENT_SERVER_URL } from "@/lib/referrals";
+import { AGENT_SERVER_URL, referralState } from "@/lib/referrals";
 import { localPdfPath, PDF_UPLOAD_DIRECTORY } from "@/lib/pdf-storage";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function GET(
       });
     }
     const state = await response.json();
-    const pdfPath = state.values?.pdf_path;
+    const pdfPath = referralState(state.values).pdf_path;
     if (typeof pdfPath !== "string" || !pdfPath.endsWith(".pdf")) {
       return new NextResponse("No source PDF is available.", { status: 404 });
     }

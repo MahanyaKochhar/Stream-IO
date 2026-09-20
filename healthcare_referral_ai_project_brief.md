@@ -25,7 +25,7 @@ The current app focuses on orthopedic knee referrals.
 
 ## Future work
 
-- **Supervisor agent:** Make referral intake the first tool of a broader assistant.
+- **stream_agent agent:** Make referral intake the first tool of a broader assistant.
   Keep one case per chat; initially handle packet uploads and reply “Coming soon”
   for unsupported requests.
 - **Conversational follow-up:** Answer case questions and accept missing details or

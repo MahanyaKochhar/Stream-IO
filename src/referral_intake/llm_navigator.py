@@ -22,18 +22,23 @@ from referral_intake.models import ReferralExtraction
 NAVIGATOR_API_BASE = "https://api.ai.it.ufl.edu"
 
 
-def _structured_model(schema: type[BaseModel]):
-    """Initialize UF Navigator with structured output."""
+def navigator_model() -> ChatOpenAI:
+    """Initialize the shared UF Navigator chat model."""
 
     load_dotenv()
-    llm = ChatOpenAI(
+    return ChatOpenAI(
         openai_api_base=NAVIGATOR_API_BASE,
         openai_api_key=_required_setting("NAVIGATOR_API_KEY"),
         model=_required_setting("NAVIGATOR_MODEL"),
-        temperature=0.1,
+        temperature=0.2,
         max_retries=2,
     )
-    return llm.with_structured_output(schema, method="json_schema")
+
+
+def _structured_model(schema: type[BaseModel]):
+    """Initialize UF Navigator with structured output."""
+
+    return navigator_model().with_structured_output(schema, method="json_schema")
 
 
 def _required_setting(name: str) -> str:

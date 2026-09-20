@@ -157,7 +157,14 @@ def check_routing(
 def human_review(state: ReferralState) -> Command[Literal[END]]:
     """Pause a routing mismatch until a human records a review note."""
 
-    review_text = interrupt({"type": "routing_review"})
+    review_text = interrupt(
+        {
+            "type": "routing_review",
+            "referral": {
+                key: value for key, value in state.items() if key != "markdown"
+            },
+        }
+    )
     if not isinstance(review_text, str) or not review_text.strip():
         raise ValueError("Human review text must be a non-empty string.")
 
@@ -265,7 +272,14 @@ def review_referral_packet(
 ) -> Command[Literal[END]]:
     """Pause for a human to approve or reject the referral packet."""
 
-    response = interrupt({"type": "clinical_review"})
+    response = interrupt(
+        {
+            "type": "clinical_review",
+            "referral": {
+                key: value for key, value in state.items() if key != "markdown"
+            },
+        }
+    )
     review = ReferralReviewResponse.model_validate(response)
     decision = review.decision
     clinical = ClinicalRequirementsResult.model_validate(state["clinical_requirements"])

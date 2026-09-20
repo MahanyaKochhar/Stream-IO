@@ -55,12 +55,6 @@ type RoutingReviewProps = {
   review_text?: string;
 };
 
-type CompletionProps = {
-  outcome: string;
-  title: string;
-  message: string;
-};
-
 function ReferralProgress({ message, isLoading }: RegistryComponentProps) {
   const { workflow } = message.props as ProgressProps;
   const steps = Object.values(workflow).sort((a, b) => a.order - b.order);
@@ -188,30 +182,6 @@ function RoutingReview({
   );
 }
 
-function ReferralCompletion({ message }: RegistryComponentProps) {
-  const props = message.props as CompletionProps;
-  const successful = props.outcome === "referral_approved";
-  // Older threads may still contain validation paths in their saved messages.
-  const text = props.outcome === "needs_information"
-    ? props.message.replace(/\b(?:patient|insurance)\.([a-z_]+)\b/g, (_, field: string) =>
-        field.replaceAll("_", " ").replace(/\bid\b/g, "ID"),
-      ).replace(/\bmember id\b/gi, "Member ID")
-    : props.message;
-
-  return (
-    <div
-      className={`rounded-2xl border p-4 shadow-sm ${
-        successful
-          ? "border-teal-200 bg-teal-50/70"
-          : "border-amber-200 bg-amber-50/70"
-      }`}
-    >
-      <p className="text-sm font-semibold text-slate-950">{props.title}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-600">{text}</p>
-    </div>
-  );
-}
-
 export const REFERRAL_UI_COMPONENTS: Record<
   string,
   ComponentType<RegistryComponentProps>
@@ -219,7 +189,6 @@ export const REFERRAL_UI_COMPONENTS: Record<
   referral_progress: ReferralProgress,
   clinical_review: ClinicalReview,
   routing_review: RoutingReview,
-  referral_completion: ReferralCompletion,
 };
 
 export function ReferralUIMessage({

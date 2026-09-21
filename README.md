@@ -1,9 +1,10 @@
 # Referral Intake Agent
 
-LangGraph intake for a receiving practice: parse a PDF with LlamaParse, classify
-referral intent, extract fields, validate routing and required data, and prepare
-clinical findings for coordinator review. LLM calls use UF Navigator. The current
-clinical catalog supports orthopedic knee referrals.
+Healthcare referral chat for a receiving practice. A LangChain `stream_agent`
+uses UF Navigator to answer chat questions and decide when to call its referral
+intake tool. The tool runs the LangGraph workflow that parses and classifies PDFs,
+extracts fields, validates required data, and prepares orthopedic knee findings
+for coordinator review.
 
 See the [project brief](healthcare_referral_ai_project_brief.md) for the project
 outline, implemented scope, and future work.
@@ -65,7 +66,7 @@ NAVIGATOR_MODEL=
 LANGSMITH_API_KEY=
 ```
 
-Classification and extraction share the Navigator model configuration.
+The stream_agent, classification, and extraction share the Navigator model configuration.
 
 ## Run the app
 
@@ -90,8 +91,15 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Each PDF starts a new thread. Non-referral documents
-end with “Not a referral document.” Referral reviews resume the same thread.
+Open `http://localhost:3000`. Every message and PDF upload goes through
+`stream_agent`. “Start a referral intake” prefills the editable composer; the
+agent decides from the conversation whether to reply or call its only tool.
+Responses stream into the chat after a shimmering thinking indicator.
+
+Each chat supports one PDF. Use `New chat` for another packet. Coordinator review
+pauses that thread and disables its composer; approving or rejecting resumes the
+same checkpoint, completes the agent reply, and keeps the thread available for
+follow-up questions. Non-referral documents stop before extraction and review.
 
 ## Sample knee referral PDFs
 

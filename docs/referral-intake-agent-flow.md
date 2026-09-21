@@ -39,7 +39,40 @@ flowchart TD
     class APPROVED success;
 ```
 
-## Parent graph
+## stream_agent
+
+- `stream_agent` is the LangChain agent used by both frontend `useStream` hooks.
+- It is created with LangChain's `create_agent`, using UF Navigator through the shared
+  `ChatOpenAI` factory and its own [system prompt](../src/referral_intake/stream_agent.py).
+- LangChain agents run on LangGraph internally. Agent Server registers the agent under
+  `graphs` in `langgraph.json` to provide streaming, persistence, and review resumption.
+- Its only tool, `referral_intake`, runs the existing intake graph for the attached PDF.
+  The system prompt guides whether to reply or call it on each interaction;
+  no middleware forces a tool call or hides the tool.
+- The agent uses only LangChain's built-in `messages`, with no custom state schema.
+  Upload details travel in the user message's `additional_kwargs.referral`;
+  the tool reads them without asking the model to supply a file path.
+- Text and upload messages are checkpointed in the `stream_agent` thread. Identity,
+  capability, and completed-referral questions receive agent replies; unsupported
+  healthcare operations have no tool.
+- One PDF belongs to one thread. `New chat` starts another thread, while completed
+  intake is reused for later questions without calling the tool or parsing again.
+- Intake emits custom referral-state events for live progress. Its final state is
+  saved as the tool artifact and its text result returns to the agent for a concise reply.
+- A routing or clinical review interrupt pauses the tool call and the agent thread.
+  Review controls resume the same checkpoint; the composer becomes available again
+  after the agent finishes its response.
+- AI Elements renders attachment cards and streamed Markdown. A shimmering thinking
+  label covers empty model chunks, then `MessageResponse` updates as text arrives.
+  Internal metadata and tool messages remain hidden.
+- An upload without an instruction does not force intake. The agent asks what the
+  user wants and uses its prompt and tool description to decide on a later message.
+- Chat-only conversations are excluded from the referral queues.
+- Uploaded packets deferred by the user show as `Awaiting intake` in Processing.
+- The original `referral_intake` graph registration remains available for older
+  checkpoints; new chat traffic uses `stream_agent`.
+
+## Intake graph
 
 Nodes return typed `Command(update=..., goto=...)` for routing. The only static
 edges are `START → start_intake` and
@@ -85,13 +118,16 @@ for diagram rendering; it does not execute them.
 
 ## State and UI
 
-- Input: `pdf_path`, optional `pdf_name`; one thread per new packet.
+- `stream_agent` input: `messages`. Uploaded PDF details are message metadata;
+  the visible message text also tells the model that a PDF was attached.
+- The intake tool has no model-supplied arguments. It reads `pdf_path` and optional
+  `pdf_name` from the latest attached referral message.
 - Results: Markdown, classification, extracted fields, validated patient and insurance
   data, and clinical findings.
 - Status: `outcome`, `message`, `missing_fields`, and `review_text` as applicable.
 - Clinical review pauses with an interrupt; an outcome may not yet exist.
-- `workflow` tracks progress; `ui` holds progress, review, and completion messages.
-  Non-referrals display “Not a referral” in the list.
+- `workflow` tracks progress; `ui` supplies temporary progress and review elements.
+  The final chat output is agent-generated text. Non-referrals display “Not a referral.”
 - `GraphDependencies` keeps service clients and routing policy outside saved state.
   Subgraph input/output schemas keep internal instructions and working fields private.
 - See the [README](../README.md#restart-rebuild-and-storage) for persistence and PDF storage.

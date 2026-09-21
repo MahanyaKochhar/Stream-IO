@@ -139,3 +139,33 @@
     @apply font-sans;
   }
 }
+
+@keyframes ai-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: -100% 50%;
+  }
+}
+
+.ai-shimmer {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    rgb(100 116 139 / 70%) 35%,
+    var(--color-stream-navy) 50%,
+    rgb(100 116 139 / 70%) 65%
+  );
+  background-position: 100% 50%;
+  background-size: 250% 100%;
+  background-clip: text;
+  animation: ai-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-shimmer {
+    color: rgb(100 116 139);
+    animation: none;
+  }
+}

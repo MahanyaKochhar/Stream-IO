@@ -20,16 +20,17 @@ The current app focuses on orthopedic knee referrals.
   Processing, Review, and Completed queues. Mark incomplete cases “Needs information.”
 - **Saved cases:** Run LangGraph Agent Server with PostgreSQL for threads and
   checkpoints. Keep uploaded PDFs in an ignored local folder shared with the backend.
-- **Case notes:** Save text messages with each referral; conversational agent replies
-  are not implemented yet.
+- **Stream agent:** Route every message through a LangChain agent using UF Navigator.
+  It answers identity and capability questions and decides when to call referral intake.
+- **Streaming chat:** Keep one PDF and its messages in one thread. Stream assistant
+  replies after a thinking shimmer, pause at review, then resume the same conversation.
 
 ## Future work
 
-- **Supervisor agent:** Make referral intake the first tool of a broader assistant.
-  Keep one case per chat; initially handle packet uploads and reply “Coming soon”
-  for unsupported requests.
-- **Conversational follow-up:** Answer case questions and accept missing details or
-  corrections, with validation before updating the referral.
+- **Conversational updates:** Accept missing details and corrections, with validation
+  before changing the saved referral.
+- **More agent tools:** Add narrowly scoped healthcare capabilities beyond document
+  referral intake while keeping tool selection conversational.
 - **More specialties:** Add clinical requirements and workflows beyond knee referrals.
 - **Evidence and matching:** Link individual findings to source pages, match patients
   and providers, and flag conflicting information across documents.

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@langchain/core": "^1.2.9",
     "@langchain/langgraph-sdk": "^1.10.0",
     "@langchain/react": "^1.0.33",
     "@radix-ui/react-use-controllable-state": "^1.2.6",

@@ -17,6 +17,7 @@ import {
   type ReferralThread,
   formatDate,
   patientName,
+  referralState,
   statusLabel,
 } from "@/lib/referrals";
 
@@ -111,7 +112,7 @@ const queueDetails: Record<
 > = {
   processing: {
     label: "Processing",
-    description: "Packets currently being processed",
+    description: "Packets awaiting or undergoing intake",
     icon: Clock3,
   },
   completed: {
@@ -145,6 +146,7 @@ export function ReferralWorkspace({ queueView }: { queueView: QueueView }) {
             "created_at",
             "updated_at",
             "status",
+            "metadata",
             "values",
             "interrupts",
           ],
@@ -152,7 +154,16 @@ export function ReferralWorkspace({ queueView }: { queueView: QueueView }) {
       });
 
       if (!response.ok) throw new Error("Agent Server is unavailable.");
-      setThreads((await response.json()) as ReferralThread[]);
+      const records = (await response.json()) as ReferralThread[];
+      setThreads(records
+        .map((thread) => ({
+          ...thread,
+          values: referralState(
+            thread.values,
+            Object.values(thread.interrupts ?? {}).flat()[0]?.value,
+          ),
+        }))
+        .filter((thread) => thread.values.pdf_path || thread.metadata?.has_referral));
       setError(null);
     } catch (loadError) {
       setError(
@@ -179,8 +190,10 @@ export function ReferralWorkspace({ queueView }: { queueView: QueueView }) {
       review: [],
     };
     for (const thread of threads) {
-      if (thread.status === "interrupted") result.review.push(thread);
-      else if (thread.status === "idle" && thread.values)
+      if (thread.status === "interrupted") {
+        result.review.push(thread);
+      }
+      else if (thread.status === "idle" && thread.values?.outcome)
         result.completed.push(thread);
       else result.processing.push(thread);
     }

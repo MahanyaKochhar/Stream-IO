@@ -52,28 +52,25 @@ flowchart TD
 - The agent uses only LangChain's built-in `messages`, with no custom state schema.
   Upload details travel in the user message's `additional_kwargs.referral`;
   the tool reads them without asking the model to supply a file path.
-- Text and upload notes are saved in `stream_agent` messages. Identity, capability,
-  and recorded-status questions receive agent replies. Other operations are unavailable.
-- One packet belongs to one conversation; completed intake is not run again for chat turns.
-  `New chat` opens a fresh chat for another PDF; the original conversation
-  remains available on its referral page.
-- Intake streams its existing progress and review UI. Results are saved in the tool
-  message's `artifact`, while its short text result goes to the model;
-  pending interrupts carry the referral snapshot so detail pages survive reloads.
-- AI Elements renders user and assistant messages, Markdown replies, and saved
-  attachment cards. Internal metadata and tool messages stay out of the chat display.
-- Uploads without a note display only the attachment card. They do not insert an
-  intake request; the agent interprets the conversation using its role and tool description.
-- A review-required result is saved as the tool artifact without interrupting the
-  agent thread, so `Ask Stream` remains available while review is pending. Review
-  controls submit the decision as another message in that same thread and resume
-  the intake graph from the saved referral fields without parsing or extracting the
-  PDF again. The same thread remains active for chat after review is complete.
+- Text and upload messages are checkpointed in the `stream_agent` thread. Identity,
+  capability, and completed-referral questions receive agent replies; unsupported
+  healthcare operations have no tool.
+- One PDF belongs to one thread. `New chat` starts another thread, while completed
+  intake is reused for later questions without calling the tool or parsing again.
+- Intake emits custom referral-state events for live progress. Its final state is
+  saved as the tool artifact and its text result returns to the agent for a concise reply.
+- A routing or clinical review interrupt pauses the tool call and the agent thread.
+  Review controls resume the same checkpoint; the composer becomes available again
+  after the agent finishes its response.
+- AI Elements renders attachment cards and streamed Markdown. A shimmering thinking
+  label covers empty model chunks, then `MessageResponse` updates as text arrives.
+  Internal metadata and tool messages remain hidden.
+- An upload without an instruction does not force intake. The agent asks what the
+  user wants and uses its prompt and tool description to decide on a later message.
 - Chat-only conversations are excluded from the referral queues.
 - Uploaded packets deferred by the user show as `Awaiting intake` in Processing.
-- The original `referral_intake` registration keeps older checkpoints readable.
-  Their next chat or review runs through `stream_agent` using the saved referral;
-  review resumes without parsing or extracting the packet again.
+- The original `referral_intake` graph registration remains available for older
+  checkpoints; new chat traffic uses `stream_agent`.
 
 ## Intake graph
 
@@ -123,13 +120,14 @@ for diagram rendering; it does not execute them.
 
 - `stream_agent` input: `messages`. Uploaded PDF details are message metadata;
   the visible message text also tells the model that a PDF was attached.
-- Intake tool input: `pdf_path`, optional `pdf_name`; one packet per conversation.
+- The intake tool has no model-supplied arguments. It reads `pdf_path` and optional
+  `pdf_name` from the latest attached referral message.
 - Results: Markdown, classification, extracted fields, validated patient and insurance
   data, and clinical findings.
 - Status: `outcome`, `message`, `missing_fields`, and `review_text` as applicable.
 - Clinical review pauses with an interrupt; an outcome may not yet exist.
-- `workflow` tracks progress; `ui` holds progress, review, and completion messages.
-  Non-referrals display “Not a referral” in the list.
+- `workflow` tracks progress; `ui` supplies temporary progress and review elements.
+  The final chat output is agent-generated text. Non-referrals display “Not a referral.”
 - `GraphDependencies` keeps service clients and routing policy outside saved state.
   Subgraph input/output schemas keep internal instructions and working fields private.
 - See the [README](../README.md#restart-rebuild-and-storage) for persistence and PDF storage.

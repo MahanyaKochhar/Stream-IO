@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from referral_intake.classification import DocumentClassification
+from referral_intake.classification import (
+    DecisionsDocumentClassifier,
+    DocumentClassification,
+)
 from referral_intake.clinical_requirements.models import (
     ReferenceSelection,
     RequirementDefinition,
@@ -12,7 +15,6 @@ from referral_intake.clinical_requirements.models import (
 )
 from referral_intake.enums import Specialty, Subspecialty
 from referral_intake.llm_navigator import (
-    StructuredDocumentClassifier,
     StructuredReferenceSelector,
     StructuredReferralExtractor,
     StructuredRequirementExtractor,
@@ -104,7 +106,7 @@ class GraphDependencies:
     """Services and policy shared by every node in one compiled graph."""
 
     parser: PdfParser = field(default_factory=LlamaParsePdfParser)
-    classifier: DocumentClassifier = field(default_factory=StructuredDocumentClassifier)
+    classifier: DocumentClassifier = field(default_factory=DecisionsDocumentClassifier)
     extractor: ReferralExtractor = field(default_factory=StructuredReferralExtractor)
     reference_selector: ClinicalReferenceSelector = field(
         default_factory=StructuredReferenceSelector

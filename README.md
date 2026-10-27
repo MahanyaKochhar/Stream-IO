@@ -15,9 +15,9 @@ outline, implemented scope, and future work.
 flowchart TD
     START([Start]) --> INIT[start_intake]
     INIT --> PARSE[parse_pdf<br/>LlamaParse to Markdown]
-    PARSE --> CLASSIFY{classify_document<br/>LLM: referral document?}
-    CLASSIFY -->|No| NOT_REFERRAL([Not a referral document])
-    CLASSIFY -->|Yes| EXTRACT[extract_fields<br/>Structured LLM output]
+    PARSE --> CLASSIFY{classify_document<br/>Decisions API: referral probability}
+    CLASSIFY -->|probability <= 0.65| NOT_REFERRAL([Not a referral document])
+    CLASSIFY -->|probability > 0.65| EXTRACT[extract_fields<br/>Structured LLM output]
     EXTRACT --> ROUTING{check_routing}
     ROUTING -->|Mismatch| HUMAN[human_review<br/>Interrupt for routing note]
     HUMAN --> REVIEWED([Routing review recorded])
@@ -61,12 +61,17 @@ Set the parser, model, and local Agent Server credentials in `.env`:
 
 ```dotenv
 LLAMA_CLOUD_API_KEY=
+OPENAI_API_KEY=
 NAVIGATOR_API_KEY=
 NAVIGATOR_MODEL=
 LANGSMITH_API_KEY=
 ```
 
-The stream_agent, classification, and extraction share the Navigator model configuration.
+The stream_agent and extraction share the Navigator model configuration.
+Document classification uses an OpenAI Decisions API predicate on the parsed
+Markdown. It continues to extraction only when the returned probability exceeds
+`REFERRAL_PROBABILITY_THRESHOLD` (`0.65`), defined in
+`src/referral_intake/classification.py`.
 
 ## Run the app
 

@@ -7,10 +7,6 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from referral_intake.classification import (
-    CLASSIFICATION_INSTRUCTIONS,
-    DocumentClassification,
-)
 from referral_intake.clinical_requirements.models import (
     ReferenceSelection,
     RequirementDefinition,
@@ -48,19 +44,6 @@ def _required_setting(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is not configured in .env.")
     return value
-
-
-class StructuredDocumentClassifier:
-    """Classify parsed documents through UF Navigator structured output."""
-
-    def classify(self, markdown: str) -> DocumentClassification:
-        result = _structured_model(DocumentClassification).invoke(
-            [
-                ("system", CLASSIFICATION_INSTRUCTIONS),
-                ("human", markdown),
-            ]
-        )
-        return DocumentClassification.model_validate(result)
 
 
 class StructuredReferralExtractor:

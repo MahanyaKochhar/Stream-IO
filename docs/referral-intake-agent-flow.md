@@ -6,9 +6,9 @@
 flowchart TD
     START([Start]) --> INIT[start_intake]
     INIT --> PARSE[parse_pdf<br/>LlamaParse to Markdown]
-    PARSE --> CLASSIFY{classify_document<br/>LLM: referral document?}
-    CLASSIFY -->|No| NOT_REFERRAL([Not a referral document])
-    CLASSIFY -->|Yes| EXTRACT[extract_fields<br/>Structured LLM output]
+    PARSE --> CLASSIFY{classify_document<br/>Decisions API: referral probability}
+    CLASSIFY -->|probability <= 0.65| NOT_REFERRAL([Not a referral document])
+    CLASSIFY -->|probability > 0.65| EXTRACT[extract_fields<br/>Structured LLM output]
     EXTRACT --> ROUTING{check_routing}
     ROUTING -->|Mismatch| HUMAN[human_review<br/>Interrupt for routing note]
     HUMAN --> REVIEWED([Routing review recorded])
@@ -83,7 +83,7 @@ for diagram rendering; it does not execute them.
 |---|---|
 | `start_intake` | Start packet progress → `parse_pdf`. |
 | `parse_pdf` | Save LlamaParse Markdown → `classify_document`. |
-| `classify_document` | LLM classification: referral → `extract_fields`; non-referral → `END`. |
+| `classify_document` | Decisions predicate on Markdown: probability > 0.65 → `extract_fields`; otherwise → `END`. |
 | `extract_fields` | Save typed `ReferralExtraction` → `check_routing`. |
 | `check_routing` | Matching specialty/subspecialty → `validate_patient`; otherwise → `human_review`. |
 | `human_review` | Interrupt for a non-empty routing note; save `human_reviewed` → `END`. |
@@ -95,14 +95,16 @@ for diagram rendering; it does not execute them.
 
 ## Classification
 
-- The LLM returns `is_referral` and a short `reason` in `DocumentClassification`.
+- OpenAI Decisions (`gpt-6-luna`, `OPENAI_API_KEY`) returns a referral predicate
+  `probability`, stored in `DocumentClassification`. Its `is_referral` property is
+  true only above `REFERRAL_PROBABILITY_THRESHOLD` (`0.65`); equality ends intake.
   See [classification instructions](../src/referral_intake/classification.py).
 - Accept patient-specific referral intent, regardless of specialty or missing details.
 - Reject standalone records, blank forms, and unrelated documents without referral intent.
 - Rejection sets `not_referral_document`, skips extraction and review, and displays
   “Not a referral document. Please upload a patient referral packet.”
 - Packet progress stays active through parsing and classification.
-- Empty Markdown, model failures, and invalid output are run errors.
+- Empty Markdown, API failures, refusals, and invalid output are run errors.
 
 ## Clinical subgraph
 

@@ -1,6 +1,6 @@
 # Referral Intake Agent
 
-Healthcare referral chat for a receiving practice. A LangChain `stream_agent`
+Healthcare referral chat for a receiving practice. A Deep Agents `stream_agent`
 uses UF Navigator to answer chat questions and decide when to call its referral
 intake tool. The tool runs the LangGraph workflow that parses and classifies PDFs,
 extracts fields, validates required data, and prepares orthopedic knee findings
@@ -98,13 +98,57 @@ npm run dev
 
 Open `http://localhost:3000`. Every message and PDF upload goes through
 `stream_agent`. “Start a referral intake” prefills the editable composer; the
-agent decides from the conversation whether to reply or call its only tool.
+agent decides from the conversation whether to reply, process the PDF, or display
+a registered referral component.
 Responses stream into the chat after a shimmering thinking indicator.
+Tool calls appear in a collapsible activity panel with the tool name and its
+running, completed, failed, or waiting-for-review status.
 
 Each chat supports one PDF. Use `New chat` for another packet. Coordinator review
 pauses that thread and disables its composer; approving or rejecting resumes the
 same checkpoint, completes the agent reply, and keeps the thread available for
 follow-up questions. Non-referral documents stop before extraction and review.
+
+## State and controlled UI
+
+Business nodes save referral data, validation results, outcomes, and review records.
+They do not store `ui` or `workflow`. The clinical subgraph receives only Markdown
+and extracted fields and returns clinical requirements; its working data stays private.
+
+The intake tool sends public field changes (`referral_delta`) and compact milestone
+updates (`referral_progress`). Markdown and private working fields stay in the graph.
+The frontend owns milestone copy and derives required review components from interrupts.
+Busy referral rows have no link; direct visits wait until the run pauses or completes.
+
+Stream can choose `referral_summary` or `clinical_findings` through `present_referral`.
+Stream selects relevant facts from the saved intake result and sends labeled rows
+with its component choice. React validates and renders the card payload.
+Cards persist in conversation history. Only the existing human-review forms can
+submit a referral decision. No CopilotKit or A2UI
+integration is needed for this controlled component model.
+
+Stream uses `deepagents==0.7.34` with its default virtual filesystem and delegation
+capabilities. Custom backends, sandboxes, interpreters, and execution configuration
+are deferred. The existing UF Navigator model and Agent Server identity are preserved.
+
+### Code map
+
+| Location | Responsibility |
+| --- | --- |
+| `src/referral_intake/stream_agent.py` | Prompt, Deep Agent creation, and live-event registration. |
+| `src/referral_intake/tools.py` | Intake execution and the read-only `present_referral` tool. |
+| `src/referral_intake/presentation.py` | Allowed component names, tool input validation, and progress projection. |
+| `src/referral_intake/public.py` | One allowlist for public snapshots, tool results, and interrupts. |
+| `frontend/src/lib/referral-presentation.ts` | Validate card payloads and derive automatic progress/review UI. |
+| `frontend/src/components/referral-ui.tsx` | Registry mapping approved component names to React components. |
+
+Stream can add text alongside a card when it provides information the card does
+not cover. Progress and required review forms appear automatically from live events
+and interrupts.
+
+`CustomTransformer` registration is required for the current v3 streaming setup:
+without it, referral deltas and progress do not reach the frontend's custom channel.
+Optional presentation cards use persisted tool messages and do not depend on it.
 
 ## Sample knee referral PDFs
 
@@ -121,11 +165,14 @@ Attach one packet in the app to start a new referral case.
 
 ## Restart, rebuild, and storage
 
-Start existing stopped containers with Docker Desktop or:
+Start existing containers from the repository root:
 
 ```bash
-docker start stream-langgraph-postgres-1 stream-langgraph-redis-1 stream-langgraph-api-1
+./scripts/start-langgraph.sh
 ```
+
+The script waits for PostgreSQL and Redis, reconnects the API to `stream_default`
+if its network attachment is missing, and checks the API on port `8123`.
 
 After backend code or dependency changes, rerun the `langgraph up` command above,
 including the Compose file. Restarting alone keeps the packaged code unchanged.
@@ -135,6 +182,11 @@ including the Compose file. Restarting alone keeps the packaged code unchanged.
   read-only as `/uploads` in the backend; the UI translates paths for PDF viewing.
 - Agent Server manages checkpointing. No database connection or checkpointer is
   required in graph code. PDF files are separate from database state.
+- Only `stream_agent` is registered as an assistant. `referral_intake` runs inside
+  its tool and shares the conversation's thread; it is not a separate assistant.
+
+See [conversation persistence](docs/conversation-persistence.md) for threads,
+runs, checkpoints, and storage behavior.
 
 ## Backend-only development
 
@@ -145,3 +197,7 @@ including the Compose file. Restarting alone keeps the packaged code unchanged.
 This runs on port `2024` and saves state in `.langgraph_api`. Submit a host-readable
 PDF path through Studio or the SDK. The UI's `/uploads` paths require the Docker
 mount and do not work unchanged with this mode.
+
+Finish existing paused referrals before deploying this graph-schema change. Older
+completed artifacts and UI messages remain readable; stored checkpoints are not
+rewritten. Rebuild the backend image to install Deep Agents and load the new code.

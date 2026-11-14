@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   ClipboardCheck,
+  FileText,
   Clock3,
   CheckCircle2,
   LoaderCircle,
@@ -19,6 +20,7 @@ import {
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
 import { Message, MessageContent } from "@/components/ai-elements/message";
+import type { CardRow } from "@/lib/referral-presentation";
 import type {
   CoordinatorWorkflow,
   Finding,
@@ -182,6 +184,40 @@ function RoutingReview({
   );
 }
 
+function ReferralCard({ message }: RegistryComponentProps) {
+  const { rows } = message.props as { rows: CardRow[] };
+  const isSummary = message.name === "referral_summary";
+  const Icon = isSummary ? FileText : ClipboardCheck;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+      <div className="flex items-center gap-3 bg-stream-navy px-4 py-3 text-white">
+        <span className="rounded-lg bg-white/10 p-2 text-stream-teal">
+          <Icon aria-hidden="true" className="size-4" />
+        </span>
+        <p className="text-sm font-semibold">
+          {isSummary ? "Referral summary" : "Clinical findings"}
+        </p>
+      </div>
+      <dl className="divide-y divide-slate-200/80 px-4">
+        {rows.map(({ label, value }, index) => (
+          <div
+            className="grid gap-1 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-4"
+            key={index}
+          >
+            <dt className="break-words text-xs font-medium text-slate-600">
+              {label}
+            </dt>
+            <dd className="whitespace-pre-line break-words text-sm leading-relaxed text-slate-900">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export const REFERRAL_UI_COMPONENTS: Record<
   string,
   ComponentType<RegistryComponentProps>
@@ -189,6 +225,8 @@ export const REFERRAL_UI_COMPONENTS: Record<
   referral_progress: ReferralProgress,
   clinical_review: ClinicalReview,
   routing_review: RoutingReview,
+  referral_summary: ReferralCard,
+  clinical_findings: ReferralCard,
 };
 
 export function ReferralUIMessage({

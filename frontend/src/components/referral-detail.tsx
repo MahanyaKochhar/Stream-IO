@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useStream } from "@langchain/react";
 import { ClinicalFindings } from "@/components/clinical-findings";
 import { ReferralConversation } from "@/components/referral-chat";
@@ -21,6 +21,7 @@ import {
   AGENT_SERVER_URL,
   ASSISTANT_ID,
   type ReviewInterrupt,
+  type ReferralThread,
   patientName,
   fileName,
   formatBirthDate,
@@ -62,6 +63,64 @@ function Section({
 }
 
 export function ReferralDetail({ threadId }: { threadId: string }) {
+  const [status, setStatus] = useState<ReferralThread["status"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function load() {
+      try {
+        const response = await fetch(
+          `${AGENT_SERVER_URL}/threads/${threadId}`,
+          {
+            cache: "no-store",
+          },
+        );
+        if (!response.ok)
+          throw new Error("Referral status could not be loaded.");
+        const thread: ReferralThread = await response.json();
+        if (!active) return;
+        setStatus(thread.status);
+        setError(null);
+        // Mount the details only after the run pauses or completes, so its
+        // initial stream hydration includes the saved review/results.
+        if (thread.status === "busy") timer = setTimeout(load, 3000);
+      } catch (failure) {
+        if (!active) return;
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Unable to load referral.",
+        );
+        timer = setTimeout(load, 3000);
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [threadId]);
+
+  if (status === null || status === "busy" || error) {
+    return (
+      <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-10 md:px-8">
+        <Link className="text-sm font-medium text-stream-teal" href="/">
+          ← Back to referrals
+        </Link>
+        <p className="mt-8 text-sm text-slate-600" role="status">
+          {error ??
+            (status === "busy"
+              ? "Referral is processing. Details will be available when processing pauses or completes."
+              : "Loading referral…")}
+        </p>
+      </main>
+    );
+  }
+  return <ReferralDetailContent threadId={threadId} />;
+}
+
+function ReferralDetailContent({ threadId }: { threadId: string }) {
   const [sourceOpen, setSourceOpen] = useState(true);
   const [sourceExpanded, setSourceExpanded] = useState(false);
   const stream = useStream<Record<string, unknown>, ReviewInterrupt>({
@@ -134,7 +193,7 @@ export function ReferralDetail({ threadId }: { threadId: string }) {
             Referral record
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">
-            {patientName(state)}
+            {patientName(state, state.outcome !== "processing")}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">

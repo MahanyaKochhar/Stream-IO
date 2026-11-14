@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useStream } from "@langchain/react";
-import { isAIMessage } from "@langchain/core/messages";
+import { isAIMessage, isToolMessage } from "@langchain/core/messages";
 import type { Message as StoredMessage } from "@langchain/langgraph-sdk";
-import { ArrowUp, FileText, LoaderCircle, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Check, CircleAlert, FileText, LoaderCircle, Paperclip, Pause, Plus, Wrench } from "lucide-react";
 import type { FileUIPart } from "ai";
 
 import {
@@ -24,7 +24,7 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
-import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Reasoning } from "@/components/ai-elements/reasoning";
 import {
   PromptInput,
   PromptInputBody,
@@ -40,10 +40,14 @@ import {
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import {
+  automaticReferralUI,
+  presentationMessages,
+} from "@/lib/referral-presentation";
 import { ReferralUIMessage } from "@/components/referral-ui";
 import {
   respondToReview,
-  useReferralState,
+  useReferralLive,
   type ReferralStream,
 } from "@/lib/use-referral-state";
 import {
@@ -249,12 +253,13 @@ function ReferralChatPanel({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>(null);
 
-  const state = useReferralState(stream);
+  const { state, progress } = useReferralLive(stream);
   const hasPacket = Boolean(state.pdf_path);
   const interrupt = stream.interrupt?.value;
   const reviewPending = Boolean(interrupt);
-  const uiMessages = state.ui ?? [];
+  const uiMessages = automaticReferralUI(state, interrupt, progress);
   const savedMessages = (stream.values.messages ?? []) as StoredMessage[];
+  const presentations = presentationMessages(savedMessages);
   const displayError = getDisplayError(uploadError, stream.error);
 
   async function submitMessage(text: string) {
@@ -331,6 +336,14 @@ function ReferralChatPanel({
       ? "error"
       : "ready";
   const lastMessage = stream.messages.at(-1);
+  const lastHumanIndex = stream.messages.findLastIndex((message) => message.type === "human");
+  const hasActiveToolCall = stream.messages.slice(lastHumanIndex + 1).some(
+    (message) => isAIMessage(message) && message.tool_calls?.some(
+      (call) => !stream.messages.some(
+        (item) => isToolMessage(item) && item.tool_call_id === call.id,
+      ) && stream.toolCalls.find((tool) => tool.callId === call.id)?.status !== "finished",
+    ),
+  );
   const lastAssistantText = lastMessage?.type === "ai"
     ? typeof lastMessage.content === "string"
       ? lastMessage.content
@@ -344,16 +357,21 @@ function ReferralChatPanel({
   const hasConversation = Boolean(
     state.pdf_path ||
     stream.messages.length ||
-    uiMessages.length ||
     displayError,
   );
 
-  const showReferralUI = reviewPending || (isWorking && !state.outcome);
+  const intakeMessage = stream.messages.find(
+    (message) => isAIMessage(message) &&
+      message.tool_calls?.some((call) => call.name === "referral_intake"),
+  );
+  const intakeRunning = !state.outcome || state.outcome === "processing";
+  const showReferralUI = reviewPending ||
+    (isWorking && Boolean(intakeMessage) && intakeRunning);
   const referralUI = showReferralUI
     ? uiMessages.map((message) => (
         <ReferralUIMessage
           canRespond={reviewPending}
-          isLoading={stream.isLoading && !state.outcome}
+          isLoading={stream.isLoading && intakeRunning}
           key={message.id}
           message={message}
           respond={respond}
@@ -365,10 +383,6 @@ function ReferralChatPanel({
         />
       ))
     : [];
-  const intakeMessage = stream.messages.find(
-    (message) => isAIMessage(message) &&
-      message.tool_calls?.some((call) => call.name === "referral_intake"),
-  );
   const attachmentMessage = [...stream.messages].reverse().find((message) => {
     if (message.type !== "human") return false;
     const saved = savedMessages.find((item) => item.id === message.id);
@@ -382,6 +396,7 @@ function ReferralChatPanel({
         ).join("");
     return content.includes("Attached PDF:");
   });
+  const referralUIMessageId = intakeMessage?.id ?? attachmentMessage?.id;
 
   const composer = (
     <>
@@ -465,8 +480,29 @@ function ReferralChatPanel({
         <>
           <Conversation className="min-h-0 flex-1 bg-[#fbfcfc]">
             <ConversationContent className="mx-auto w-full max-w-[560px] gap-4 p-4">
-              {stream.messages.map((message) => {
+              {stream.messages.map((message, messageIndex) => {
                 const role = message.type;
+                if (isToolMessage(message)) {
+                  if (message.name === "present_referral" && message.status === "error") {
+                    return (
+                      <p className="text-sm text-slate-600" key={message.id ?? message.tool_call_id}>
+                        The referral card could not be displayed.
+                      </p>
+                    );
+                  }
+                  const presentation = presentations.get(
+                    message.id ?? message.tool_call_id,
+                  );
+                  return presentation ? (
+                    <ReferralUIMessage
+                      key={message.id ?? message.tool_call_id}
+                      message={presentation}
+                      canRespond={false}
+                      isLoading={false}
+                      respond={respond}
+                    />
+                  ) : null;
+                }
                 if (role !== "human" && role !== "ai") return null;
                 const metadata = savedMessages.find((saved) => saved.id === message.id)?.additional_kwargs ??
                   message.additional_kwargs;
@@ -478,8 +514,51 @@ function ReferralChatPanel({
                   : message.content.map((part) =>
                       part.type === "text" && typeof part.text === "string" ? part.text : "",
                     ).join("");
+                const toolCalls = isAIMessage(message) ? message.tool_calls ?? [] : [];
+                const currentTurn = messageIndex > lastHumanIndex;
+                const activities = toolCalls.map((call) => {
+                  const live = stream.toolCalls.find((tool) => tool.callId === call.id);
+                  const result = stream.messages.find(
+                    (item) => isToolMessage(item) && item.tool_call_id === call.id,
+                  );
+                  const failed = live?.status === "error" ||
+                    (result && isToolMessage(result) && result.status === "error");
+                  const status = failed ? "Failed"
+                    : result || live?.status === "finished" ? "Completed"
+                    : currentTurn && reviewPending ? "Waiting for review"
+                    : currentTurn && stream.isLoading ? "Running"
+                    : currentTurn && displayError ? "Failed"
+                    : "Stopped";
+                  return { id: call.id, name: call.name, status };
+                });
+                const activeTool = activities.find((tool) => tool.status === "Running");
                 return (
                   <Fragment key={message.id}>
+                    {activities.length > 0 && (
+                      <Message from="assistant">
+                        <MessageContent className="w-full">
+                          <Reasoning
+                            isStreaming={Boolean(activeTool)}
+                            title={activeTool ? `Calling tool (${activeTool.name})` : "Tool activity"}
+                          >
+                            {activities.map((activity) => {
+                              const Icon = activity.status === "Running" ? LoaderCircle
+                                : activity.status === "Completed" ? Check
+                                : activity.status === "Failed" ? CircleAlert
+                                : Pause;
+                              return (
+                                <div className="flex items-center gap-2 text-xs" key={activity.id}>
+                                  <Wrench aria-hidden="true" className="size-3.5 shrink-0" />
+                                  <span className="font-medium text-slate-700">{activity.name}</span>
+                                  <Icon aria-hidden="true" className={`ml-auto size-3.5 shrink-0 ${activity.status === "Running" ? "animate-spin" : ""}`} />
+                                  <span role="status">{activity.status}</span>
+                                </div>
+                              );
+                            })}
+                          </Reasoning>
+                        </MessageContent>
+                      </Message>
+                    )}
                     {(text || attachment?.pdf_path) && (
                       <Message
                         className={role === "human" ? "max-w-[85%] items-end" : undefined}
@@ -520,17 +599,17 @@ function ReferralChatPanel({
                         )}
                       </Message>
                     )}
-                    {message.id === attachmentMessage?.id && referralUI}
+                    {message.id === referralUIMessageId && referralUI}
                   </Fragment>
                 );
               })}
 
-              {!attachmentMessage && referralUI}
+              {!referralUIMessageId && referralUI}
 
-              {isWorking && !referralUI.length && !lastAssistantText.trim() && (
+              {isWorking && !hasActiveToolCall && !lastAssistantText.trim() && (
                 <Message from="assistant">
                   <MessageContent className="text-sm font-medium">
-                    <Shimmer>Thinking…</Shimmer>
+                    <Reasoning isStreaming title={uploadPhase === "uploading" ? "Uploading PDF…" : "Thinking…"} />
                   </MessageContent>
                 </Message>
               )}

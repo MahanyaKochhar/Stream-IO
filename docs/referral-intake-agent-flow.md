@@ -41,57 +41,45 @@ flowchart TD
 
 ## stream_agent
 
-- `stream_agent` is the LangChain agent used by both frontend `useStream` hooks.
-- It is created with LangChain's `create_agent`, using UF Navigator through the shared
-  `ChatOpenAI` factory and its own [system prompt](../src/referral_intake/stream_agent.py).
-- LangChain agents run on LangGraph internally. Agent Server registers the agent under
-  `graphs` in `langgraph.json` to provide streaming, persistence, and review resumption.
-- Its only tool, `referral_intake`, runs the existing intake graph for the attached PDF.
-  The system prompt guides whether to reply or call it on each interaction;
-  no middleware forces a tool call or hides the tool.
-- The agent uses only LangChain's built-in `messages`, with no custom state schema.
-  Upload details travel in the user message's `additional_kwargs.referral`;
-  the tool reads them without asking the model to supply a file path.
-- Text and upload messages are checkpointed in the `stream_agent` thread. Identity,
-  capability, and completed-referral questions receive agent replies; unsupported
-  healthcare operations have no tool.
-- One PDF belongs to one thread. `New chat` starts another thread, while completed
-  intake is reused for later questions without calling the tool or parsing again.
-- Intake emits custom referral-state events for live progress. Its final state is
-  saved as the tool artifact and its text result returns to the agent for a concise reply.
-- A routing or clinical review interrupt pauses the tool call and the agent thread.
-  Review controls resume the same checkpoint; the composer becomes available again
-  after the agent finishes its response.
-- AI Elements renders attachment cards and streamed Markdown. A shimmering thinking
-  label covers empty model chunks, then `MessageResponse` updates as text arrives.
-  Internal metadata and tool messages remain hidden.
-- An upload without an instruction does not force intake. The agent asks what the
-  user wants and uses its prompt and tool description to decide on a later message.
-- Chat-only conversations are excluded from the referral queues.
-- Uploaded packets deferred by the user show as `Awaiting intake` in Processing.
-- The original `referral_intake` graph registration remains available for older
-  checkpoints; new chat traffic uses `stream_agent`.
+- Both frontend `useStream` hooks use the Deep Agent created with
+  `create_deep_agent`, the existing UF Navigator model, and SDK defaults.
+  Agent Server registers it as `stream_agent` for persistence and streaming.
+- `referral_intake` reads the attached PDF from message metadata and runs the
+  deterministic intake graph. `present_referral` selects a read-only summary
+  or findings component using saved data. Its strict input schema accepts only
+  the component choice; the runtime is injected by LangChain.
+- Default virtual filesystem and delegation tools come from Deep Agents.
+  Custom backends, interpreters, and sandboxes are deferred.
+- Upload metadata travels in `additional_kwargs.referral`. Each chat supports
+  one PDF. An upload without instructions does not force intake.
+- Public referral deltas and compact milestone events drive live progress;
+  completed results and optional presentation requests persist as tool artifacts.
+- Routing and clinical interrupts pause the same tool and thread. Review resumes
+  the checkpoint without repeating parsing. The composer waits for review.
+- AI Elements renders attachments, tool activity, streamed text, and registered
+  presentation cards. Chat-only threads are excluded from referral queues.
+- Busy rows cannot navigate. Direct detail URLs poll until the run pauses or
+  completes before loading the saved record. Deferred uploads remain navigable.
 
 ## Intake graph
 
-Nodes return typed `Command(update=..., goto=...)` for routing. The only static
-edges are `START → start_intake` and
-`clinical_requirements → review_referral_packet`. `destinations` describes routes
-for diagram rendering; it does not execute them.
+Fixed sequences use static edges and ordinary state updates. Classification,
+routing, and patient/insurance validation retain conditional `Command` routing.
+Node boundaries and required review checkpoints are preserved.
 
-| Node | Action and next path |
-|---|---|
-| `start_intake` | Start packet progress → `parse_pdf`. |
-| `parse_pdf` | Save LlamaParse Markdown → `classify_document`. |
-| `classify_document` | Decisions predicate on Markdown: probability > 0.65 → `extract_fields`; otherwise → `END`. |
-| `extract_fields` | Save typed `ReferralExtraction` → `check_routing`. |
-| `check_routing` | Matching specialty/subspecialty → `validate_patient`; otherwise → `human_review`. |
-| `human_review` | Interrupt for a non-empty routing note; save `human_reviewed` → `END`. |
-| `validate_patient` | Valid patient → `validate_insurance`; otherwise → `missing_information`. |
-| `validate_insurance` | Valid insurance → `clinical_requirements`; otherwise → `missing_information`. |
-| `missing_information` | Save `needs_information` and missing-field message → `END`. |
-| `clinical_requirements` | Run the clinical subgraph; return draft findings → `review_referral_packet`. |
-| `review_referral_packet` | Interrupt for edited findings, `decision`, and `reviewed_by`; save `referral_approved` or `referral_rejected` → `END`. |
+| Node | Behavior |
+| --- | --- |
+| `start_intake` | Record `processing`, then parse the PDF. |
+| `parse_pdf` | Parse Markdown, then classify. |
+| `classify_document` | Referral → extraction; unrelated document → `END`. |
+| `extract_fields` | Extract the nested referral schema, then check routing. |
+| `check_routing` | Match → validate patient; mismatch → routing review. |
+| `human_review` | Interrupt for a routing note, save `human_reviewed`, then end. |
+| `validate_patient` | Valid → validate insurance; missing → missing information. |
+| `validate_insurance` | Valid → clinical requirements; missing → missing information. |
+| `missing_information` | Finalize `needs_information`, then end. |
+| `clinical_requirements` | Return draft clinical requirements/findings for review. |
+| `review_referral_packet` | Interrupt for edited findings and a human decision, save it, then end. |
 
 ## Classification
 
@@ -127,9 +115,14 @@ for diagram rendering; it does not execute them.
 - Results: Markdown, classification, extracted fields, validated patient and insurance
   data, and clinical findings.
 - Status: `outcome`, `message`, `missing_fields`, and `review_text` as applicable.
-- Clinical review pauses with an interrupt; an outcome may not yet exist.
-- `workflow` tracks progress; `ui` supplies temporary progress and review elements.
-  The final chat output is agent-generated text. Non-referrals display “Not a referral.”
+- Clinical review pauses with an interrupt; the outcome remains `processing` until a decision.
+- Business state contains no `workflow` or `ui`. Public field deltas and compact
+  progress events are projected by the intake tool; the frontend supplies milestone
+  labels and required review components from interrupts. Markdown and clinical
+  working fields are excluded from public snapshots.
+- Stream uses Deep Agents defaults. Its `present_referral` tool selects a registered
+  summary or findings card and supplies labeled rows drawn from the saved result.
+  Cards persist as tool artifacts, independently of the business graph.
 - `GraphDependencies` keeps service clients and routing policy outside saved state.
   Subgraph input/output schemas keep internal instructions and working fields private.
 - See the [README](../README.md#restart-rebuild-and-storage) for persistence and PDF storage.

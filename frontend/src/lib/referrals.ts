@@ -79,7 +79,7 @@ export type ReferralExtraction = {
 export type ReferralState = {
   pdf_path?: string;
   pdf_name?: string;
-  markdown?: string;
+  document_classification?: { probability: number; is_referral?: boolean };
   extracted?: ReferralExtraction;
   patient?: Patient;
   insurance?: Insurance;
@@ -137,14 +137,18 @@ export type ReferralThread = {
   interrupts?: Record<string, { value: ReviewInterrupt }[]>;
 };
 
-export function patientName(state?: ReferralState | null): string {
-  if (!state) return "Processing referral";
+export function patientName(
+  state?: ReferralState | null,
+  showFallback = true,
+): string {
+  if (!state) return showFallback ? "Processing referral" : "";
 
   const patient = state.patient ?? state.extracted?.patient;
   const name = [patient?.first_name, patient?.last_name]
     .filter(Boolean)
     .join(" ");
 
+  if (!showFallback) return name;
   return name || state.pdf_name || fileName(state.pdf_path) || "Referral record";
 }
 
@@ -166,6 +170,7 @@ export function statusLabel(thread: ReferralThread): string {
   if (thread.status === "error") return "Needs attention";
   if (thread.status === "interrupted") return "Review needed";
   if (!thread.values?.outcome) return "Awaiting intake";
+  if (thread.values.outcome === "processing") return "Processing";
   if (thread.values?.outcome === "not_referral_document") return "Not a referral";
   if (thread.values?.outcome === "referral_approved") return "Approved";
   if (thread.values?.outcome === "referral_rejected") return "Rejected";

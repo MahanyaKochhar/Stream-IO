@@ -56,7 +56,9 @@ function ReferralRows({ threads }: { threads: ReferralThread[] }) {
       <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 text-center">
         <div>
           <FileCheck2 className="mx-auto mb-2 size-5 text-slate-400" />
-          <p className="text-sm font-medium text-slate-700">No referrals here yet</p>
+          <p className="text-sm font-medium text-slate-700">
+            No referrals here yet
+          </p>
           <p className="mt-1 text-xs text-slate-400">
             Upload a packet in the intake panel to begin.
           </p>
@@ -67,39 +69,59 @@ function ReferralRows({ threads }: { threads: ReferralThread[] }) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200">
-      {threads.map((thread, index) => (
-        <Link
-          className={`group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 bg-white px-4 py-4 transition hover:bg-slate-50 sm:grid-cols-[minmax(0,1.4fr)_minmax(130px,.8fr)_110px_24px] ${index ? "border-t border-slate-100" : ""}`}
-          href={`/referrals/${thread.thread_id}`}
-          key={thread.thread_id}
-        >
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">
-              {patientName(thread.values)}
-            </p>
-            <p className="mt-1 truncate text-xs text-slate-500">
-              {thread.values?.extracted?.reason_for_referral ??
-                thread.values?.extracted?.referral_type ??
-                "Referral intake"}
-            </p>
-            <p className="mt-1.5 break-all text-[10px] leading-4 text-slate-400">
-              {thread.thread_id}
-            </p>
+      {threads.map((thread, index) => {
+        const busy = thread.status === "busy";
+        const processing = busy || thread.values?.outcome === "processing";
+        const className = `grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 bg-white px-4 py-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(130px,.8fr)_110px_24px] ${index ? "border-t border-slate-100" : ""}`;
+        const content = (
+          <>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {patientName(thread.values, !processing)}
+              </p>
+              <p className="mt-1 truncate text-xs text-slate-500">
+                {thread.values?.extracted?.reason_for_referral ??
+                  thread.values?.extracted?.referral_type ??
+                  "Referral intake"}
+              </p>
+              <p className="mt-1.5 break-all text-[10px] leading-4 text-slate-400">
+                {thread.thread_id}
+              </p>
+            </div>
+            <div className="hidden min-w-0 sm:block">
+              <p className="truncate text-xs font-medium text-slate-700">
+                {thread.values?.extracted?.subspecialty ??
+                  thread.values?.extracted?.specialty ??
+                  "Awaiting classification"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Updated {formatDate(thread.updated_at)}
+              </p>
+            </div>
+            <StatusPill thread={thread} />
+            {!busy && (
+              <ArrowUpRight className="hidden size-4 text-slate-300 transition group-hover:text-slate-700 sm:block" />
+            )}
+          </>
+        );
+        return busy ? (
+          <div
+            aria-disabled="true"
+            className={className}
+            key={thread.thread_id}
+          >
+            {content}
           </div>
-          <div className="hidden min-w-0 sm:block">
-            <p className="truncate text-xs font-medium text-slate-700">
-              {thread.values?.extracted?.subspecialty ??
-                thread.values?.extracted?.specialty ??
-                "Awaiting classification"}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Updated {formatDate(thread.updated_at)}
-            </p>
-          </div>
-          <StatusPill thread={thread} />
-          <ArrowUpRight className="hidden size-4 text-slate-300 transition group-hover:text-slate-700 sm:block" />
-        </Link>
-      ))}
+        ) : (
+          <Link
+            className={`${className} group transition hover:bg-slate-50`}
+            href={`/referrals/${thread.thread_id}`}
+            key={thread.thread_id}
+          >
+            {content}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -193,7 +215,7 @@ export function ReferralWorkspace({ queueView }: { queueView: QueueView }) {
       if (thread.status === "interrupted") {
         result.review.push(thread);
       }
-      else if (thread.status === "idle" && thread.values?.outcome)
+      else if (thread.status === "idle" && thread.values?.outcome && thread.values.outcome !== "processing")
         result.completed.push(thread);
       else result.processing.push(thread);
     }

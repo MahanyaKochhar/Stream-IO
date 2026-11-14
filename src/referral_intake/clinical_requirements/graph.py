@@ -2,7 +2,7 @@
 
 from functools import partial
 
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from referral_intake.clinical_requirements.nodes import (
@@ -36,7 +36,6 @@ def build_clinical_requirements_graph(
     builder.add_node(
         "select_references",
         partial(select_references, dependencies=dependencies),
-        destinations=("load_references",),
     )
     builder.add_node("load_references", load_references)
     builder.add_node("compile_requirements", compile_requirements)
@@ -44,5 +43,16 @@ def build_clinical_requirements_graph(
         "extract_requirement_values",
         partial(extract_requirement_values, dependencies=dependencies),
     )
-    builder.add_edge(START, "select_skill")
+    sequence = [
+        START,
+        "select_skill",
+        "load_skill",
+        "select_references",
+        "load_references",
+        "compile_requirements",
+        "extract_requirement_values",
+        END,
+    ]
+    for source, target in zip(sequence, sequence[1:], strict=False):
+        builder.add_edge(source, target)
     return builder.compile()

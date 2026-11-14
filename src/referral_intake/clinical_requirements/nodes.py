@@ -1,10 +1,5 @@
 """Nodes for the clinical-requirements subagent."""
 
-from typing import Literal
-
-from langgraph.graph import END
-from langgraph.types import Command
-
 from referral_intake.clinical_requirements.catalog import (
     compile_requirements as compile_skill_requirements,
 )
@@ -22,13 +17,11 @@ from referral_intake.clinical_requirements.models import (
 )
 from referral_intake.clinical_requirements.state import ClinicalRequirementsState
 from referral_intake.dependencies import GraphDependencies
-from referral_intake.ui import clinical_review_ui
-from referral_intake.workflow import workflow_ui_update
 
 
 def select_skill(
     state: ClinicalRequirementsState,
-) -> Command[Literal["load_skill"]]:
+) -> dict:
     """Select a skill deterministically from specialty and subspecialty."""
 
     extracted = state["extracted"]
@@ -36,30 +29,22 @@ def select_skill(
         extracted.specialty,
         extracted.subspecialty,
     )
-    return Command(
-        update={"selected_skill": skill_name},
-        goto="load_skill",
-    )
+    return {"selected_skill": skill_name}
 
 
 def load_skill(
     state: ClinicalRequirementsState,
-) -> Command[Literal["select_references"]]:
+) -> dict:
     """Load the selected skill's complete SKILL.md instructions."""
 
     instructions = load_skill_instructions(state["selected_skill"])
-    return Command(
-        update={
-            "skill_instructions": instructions,
-        },
-        goto="select_references",
-    )
+    return {"skill_instructions": instructions}
 
 
 def select_references(
     state: ClinicalRequirementsState,
     dependencies: GraphDependencies,
-) -> Command[Literal["load_references"]]:
+) -> dict:
     """Select supported condition and service reference IDs."""
 
     extracted = state["extracted"]
@@ -69,73 +54,46 @@ def select_references(
         service=extracted.service,
         reason_for_referral=extracted.reason_for_referral,
     )
-    return Command(
-        update={"selected_references": selection},
-        goto="load_references",
-    )
+    return {"selected_references": selection}
 
 
 def load_references(
     state: ClinicalRequirementsState,
-) -> Command[Literal["compile_requirements"]]:
+) -> dict:
     """Load selected reference content under logical reference IDs."""
 
     contents = load_reference_content(
         state["selected_skill"], state["selected_references"]
     )
-    return Command(
-        update={"reference_contents": contents},
-        goto="compile_requirements",
-    )
+    return {"reference_contents": contents}
 
 
 def compile_requirements(
     state: ClinicalRequirementsState,
-) -> Command[Literal["extract_requirement_values"]]:
+) -> dict:
     """Compile common and selected reference requirements deterministically."""
 
     requirements = compile_skill_requirements(
         state["skill_instructions"], state["reference_contents"]
     )
-    return Command(
-        update={"compiled_requirements": requirements},
-        goto="extract_requirement_values",
-    )
+    return {"compiled_requirements": requirements}
 
 
 def extract_requirement_values(
     state: ClinicalRequirementsState,
     dependencies: GraphDependencies,
-) -> Command[Literal[END]]:
+) -> dict:
     """Extract values for compiled requirements from referral Markdown."""
 
     extraction = dependencies.requirement_extractor.extract(
         markdown=state["markdown"],
         requirements=state["compiled_requirements"],
     )
-    progress = workflow_ui_update(
-        state["workflow"],
-        ("clinical_review", "complete"),
-        ("coordinator_review", "active"),
-    )
-    return Command(
-        update={
-            "extracted_findings": extraction.findings,
-            "clinical_requirements": ClinicalRequirementsResult(
-                skill=state["selected_skill"],
-                references=state["selected_references"],
-                requirements=state["compiled_requirements"],
-                findings=extraction.findings,
-            ),
-            **progress,
-            "ui": [
-                progress["ui"],
-                clinical_review_ui(
-                    state["compiled_requirements"],
-                    extraction.findings,
-                    editable=True,
-                ),
-            ],
-        },
-        goto=END,
-    )
+    return {
+        "clinical_requirements": ClinicalRequirementsResult(
+            skill=state["selected_skill"],
+            references=state["selected_references"],
+            requirements=state["compiled_requirements"],
+            findings=extraction.findings,
+        ),
+    }

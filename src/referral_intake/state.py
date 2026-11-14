@@ -1,14 +1,12 @@
 """LangGraph state definitions."""
 
-from typing import Annotated, Literal, NotRequired
+from typing import Literal, NotRequired
 
-from langgraph.graph.ui import AnyUIMessage, ui_message_reducer
 from typing_extensions import TypedDict
 
 from referral_intake.classification import DocumentClassification
 from referral_intake.clinical_requirements.models import ClinicalRequirementsResult
 from referral_intake.models import Insurance, Patient, ReferralExtraction
-from referral_intake.workflow import WorkflowChannel
 
 Outcome = Literal[
     "processing",
@@ -29,25 +27,17 @@ class ReferralInput(TypedDict):
     pdf_name: NotRequired[str]
 
 
-class WorkflowState(TypedDict):
-    """Coordinator-facing progress shared across parent and subgraph state."""
-
-    workflow: WorkflowChannel
-    ui: Annotated[list[AnyUIMessage], ui_message_reducer]
-
-
-class ClinicalRequirementsInput(WorkflowState):
+class ClinicalRequirementsInput(TypedDict):
     """Parent channels read by the clinical subgraph."""
 
     markdown: str
     extracted: ReferralExtraction
 
 
-class ClinicalRequirementsOutput(WorkflowState):
+class ClinicalRequirementsOutput(TypedDict):
     """Clinical subgraph channels returned to the parent."""
 
     clinical_requirements: ClinicalRequirementsResult
-    outcome: NotRequired[Outcome]
 
 
 class ReferralState(
@@ -62,6 +52,7 @@ class ReferralState(
     promote accepted patient and insurance objects into top-level state fields.
     """
 
+    outcome: NotRequired[Outcome]
     patient: Patient
     insurance: Insurance
     document_classification: NotRequired[DocumentClassification]

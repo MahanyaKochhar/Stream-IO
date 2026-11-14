@@ -1,4 +1,4 @@
-"""Referral intake graph construction with node-owned routing."""
+"""Referral intake graph with static sequences and conditional routing."""
 
 from functools import partial
 
@@ -37,15 +37,10 @@ def build_graph(
         output_schema=ReferralState,
     )
 
-    builder.add_node(
-        "start_intake",
-        start_intake,
-        destinations=("parse_pdf",),
-    )
+    builder.add_node("start_intake", start_intake)
     builder.add_node(
         "parse_pdf",
         partial(parse_pdf, dependencies=dependencies),
-        destinations=("classify_document",),
     )
     builder.add_node(
         "classify_document",
@@ -55,7 +50,6 @@ def build_graph(
     builder.add_node(
         "extract_fields",
         partial(extract_fields, dependencies=dependencies),
-        destinations=("check_routing",),
     )
     builder.add_node(
         "check_routing",
@@ -73,5 +67,11 @@ def build_graph(
     builder.add_node("missing_information", missing_information)
 
     builder.add_edge(START, "start_intake")
+    builder.add_edge("start_intake", "parse_pdf")
+    builder.add_edge("parse_pdf", "classify_document")
+    builder.add_edge("extract_fields", "check_routing")
+    builder.add_edge("human_review", END)
+    builder.add_edge("review_referral_packet", END)
+    builder.add_edge("missing_information", END)
     builder.add_edge("clinical_requirements", "review_referral_packet")
     return builder.compile(checkpointer=checkpointer)
